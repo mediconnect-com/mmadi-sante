@@ -1,0 +1,376 @@
+# MmadiSanté
+
+Application web pour saisir et consulter des informations de santé : **nom, prénom, adresse, numéro de mobile, numéro de carte d'identité** et **documents** (ordonnances, diagnostics, analyses…), avec un accès strictement contrôlé selon le profil de l'utilisateur.
+
+> ⚠ **Prototype de démonstration.** Pour de vraies données de santé de patients en France, la réglementation impose un hébergeur **certifié HDS**. Render et Supabase ne le sont pas : n'y enregistrez pas de données réelles. Voir [Limites](#limites-et-pistes-damélioration).
+
+| Profil | Ce qu'il peut faire |
+|---|---|
+| **PATIENT** | Créer son compte, saisir et modifier **ses** informations, envoyer et supprimer **ses** documents. Ne voit jamais les données d'un autre. |
+| **MÉDECIN** | Consulter (lecture seule) les informations et documents des patients **qui lui sont attribués**, et seulement ceux-là. |
+| **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes de tout profil, attribuer les patients aux médecins. |
+
+Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 24 tests automatisés.
+
+**Technologies** : Node.js + Express + Prisma (API) · Next.js + React + Tailwind (site, export statique) · PostgreSQL · interface et commentaires en français.
+
+---
+
+## Sommaire
+
+1. [Contenu du projet](#contenu-du-projet)
+2. [Comptes de démonstration](#comptes-de-démonstration)
+3. [Installation locale](#installation-locale)
+4. [Déploiement cloud (Render + Supabase)](#déploiement-cloud-render--supabase)
+5. [Variables d'environnement](#variables-denvironnement)
+6. [Sécurité : ce qui est en place](#sécurité--ce-qui-est-en-place)
+7. [API : routes principales](#api--routes-principales)
+8. [En cas d'erreur](#en-cas-derreur)
+9. [Limites et pistes d'amélioration](#limites-et-pistes-damélioration)
+
+---
+
+## Contenu du projet
+
+```
+mmadi-sante/
+├── backend/                 API Express + Prisma (routes sous /api/v1)
+│   ├── src/                 code : routes, middleware d'accès, chiffrement, validation
+│   ├── prisma/              schema.prisma, migrations/, seed.js
+│   ├── tests/               24 tests d'accès (npm test)
+│   └── .env.example         variables d'environnement documentées
+├── frontend/                site Next.js + Tailwind (responsive mobile/tablette)
+│   └── .env.example
+├── database/
+│   ├── schema.sql           ★ création des tables en SQL pur (éditeur SQL Supabase)
+│   └── seed_demo.sql        ★ comptes de démonstration en SQL pur
+├── scripts/                 ★ scripts guidés pour non-développeurs (voir ci-dessous)
+├── render.yaml              ★ déclaration des services Render (Blueprint)
+├── docker-compose.yml       PostgreSQL de test en local (facultatif)
+└── README.md
+```
+
+---
+
+## Comptes de démonstration
+
+Mot de passe **commun** à tous les comptes : `MmadiDemo2026!`
+
+| Profil | E-mail | Remarque |
+|---|---|---|
+| Administrateur | `admin@mmadisante.demo` | voit et gère tout |
+| Médecin | `medecin@mmadisante.demo` | suit **uniquement** Amina Mmadi |
+| Patient | `patient@mmadisante.demo` | Amina Mmadi |
+| Patient | `patient2@mmadisante.demo` | Paul Durand — **non suivi** par le médecin démo (pour constater le blocage d'accès) |
+
+> ⚠ Ces identifiants sont publics. Sur un site accessible depuis Internet, supprimez-les dès la démonstration terminée (voir [après le déploiement](#6-sécuriser-après-la-démonstration)).
+
+---
+
+## Installation locale
+
+### Prérequis
+
+- **Node.js 18.18 ou plus récent** (version « LTS » sur <https://nodejs.org>)
+- **PostgreSQL** : soit Docker (le plus simple), soit une installation classique de PostgreSQL
+- Sous **Windows** : ouvrez les commandes dans **Git Bash** (installé avec [Git](https://git-scm.com/downloads)) ou dans WSL. Les scripts `.sh` ne fonctionnent pas dans l'invite de commandes classique.
+
+### Méthode A — avec les scripts guidés (recommandée si vous n'êtes pas développeur)
+
+Depuis le dossier du projet :
+
+```bash
+bash scripts/0-verifier-prerequis.sh   # vérifie votre ordinateur
+bash scripts/1-configurer.sh           # choisissez « 2 » (PostgreSQL local) : crée backend/.env et les clés secrètes
+bash scripts/2-schema.sh               # crée les tables
+bash scripts/3-seed.sh                 # crée les comptes de démonstration
+bash scripts/demarrer-local.sh         # lance l'API et le site
+```
+
+Puis ouvrez **<http://localhost:3000>**. `Ctrl+C` arrête tout.
+
+> Au choix « 2 » de l'étape 1, si Docker est installé, le script propose de démarrer lui-même la base PostgreSQL de test.
+
+### Méthode B — étapes manuelles exactes
+
+**1. Démarrer PostgreSQL** (au choix) :
+
+```bash
+docker compose up -d          # base « mmadisante », utilisateur « mmadi », mot de passe « mmadi »
+```
+
+ou, avec un PostgreSQL déjà installé : créez une base vide `mmadisante` et un utilisateur ayant tous les droits dessus.
+
+**2. L'API** (dans un premier terminal) :
+
+```bash
+cd backend
+cp .env.example .env          # puis ouvrez .env et remplacez JWT_SECRET et ENCRYPTION_KEY (voir les commentaires du fichier)
+npm install
+npx prisma generate           # prépare l'accès à la base
+npx prisma migrate deploy     # crée les tables
+npm run seed                  # crée les comptes de démonstration
+npm run dev                   # API sur http://localhost:4000/api/v1  (test : http://localhost:4000/api/v1/sante)
+```
+
+> Les valeurs par défaut de `.env.example` correspondent à la base Docker ci-dessus. Générez des clés secrètes avec `openssl rand -base64 48` (ou `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`).
+
+**3. Le site** (dans un second terminal) :
+
+```bash
+cd frontend
+cp .env.example .env.local    # contient NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+npm install
+npm run dev                   # site sur http://localhost:3000
+```
+
+> ⚠ **`NEXT_PUBLIC_API_URL` doit inclure le chemin complet `/api/v1`** (`http://localhost:4000/api/v1`, et non `http://localhost:4000`).
+
+**4. Lancer les tests automatisés** (facultatif) :
+
+```bash
+cd backend
+npm test
+```
+
+Les tests utilisent la base indiquée par `DATABASE_URL`, relancent le seed démo et créent puis suppriment des comptes `test-…`. **Utilisez une base de test**, pas une base contenant des données à conserver.
+
+---
+
+## Déploiement cloud (Render + Supabase)
+
+### Vue d'ensemble
+
+```
+Navigateur ──► Site web (Render, site statique) ──► API (Render, service web) ──► Base PostgreSQL (Supabase)
+                       jamais en veille                  en veille si inactive          fichiers inclus
+```
+
+- **Supabase** héberge la base PostgreSQL (gratuite, 500 Mo). Les fichiers des utilisateurs y sont stockés (colonne `bytea`), d'où la limite de 5 Mo par fichier.
+- **Render** héberge l'API et le site, déclarés par `render.yaml`.
+
+### Ports de la base Supabase : 5432 ou 6543 ?
+
+| Variable | Port | Chaîne Supabase | Utilisée pour |
+|---|---|---|---|
+| `DATABASE_URL` | **6543** | « Transaction pooler » + `?pgbouncer=true` à la fin | **fonctionnement** de l'API (runtime) |
+| `DIRECT_URL` | **5432** | « Direct connection » ou « Session pooler » | **migrations** (création des tables) |
+
+Les migrations Prisma **ne fonctionnent pas** via le port 6543. Inversement, l'API en fonctionnement utilise le pooler (6543) pour économiser les connexions. Le script `1-configurer.sh` vérifie ces deux ports et ajoute `?pgbouncer=true` automatiquement.
+
+### Tout en une commande
+
+```bash
+bash scripts/deployer-tout.sh
+```
+
+Il enchaîne les étapes 0 à 4 ci-dessous en vous guidant. Chaque étape existe aussi seule, et peut être relancée sans risque.
+
+### Pas à pas
+
+#### 1. Créer le projet Supabase et lier l'application
+
+1. Créez un compte sur <https://supabase.com>, puis un projet (« New project »). **Notez le mot de passe de base de données** choisi : il ne sera plus affiché.
+2. Sur la page du projet, cliquez sur **« Connect »** : vous y trouvez les chaînes de connexion (les libellés peuvent légèrement varier d'une version à l'autre de Supabase) :
+   - « **Transaction pooler** » (port 6543) → ce sera `DATABASE_URL`
+   - « **Direct connection** » ou « **Session pooler** » (port 5432) → ce sera `DIRECT_URL`
+3. Lancez :
+   ```bash
+   bash scripts/1-configurer.sh        # choisissez « 1 » (Supabase) et collez les 2 adresses
+   ```
+   Le script remplace `[YOUR-PASSWORD]` pour vous (en encodant correctement les caractères spéciaux), vérifie les ports, génère `JWT_SECRET` et `ENCRYPTION_KEY`, puis écrit `backend/.env`.
+
+> **Si votre connexion n'est pas en IPv6** (cas fréquent à la maison ou en entreprise), la « Direct connection » de Supabase peut être injoignable : prenez alors la chaîne « **Session pooler** » (port 5432 aussi) pour `DIRECT_URL`.
+
+#### 2. Créer les tables
+
+```bash
+bash scripts/2-schema.sh
+```
+
+Le script essaie d'abord les migrations Prisma. **Si le réseau bloque le téléchargement des binaires Prisma** (erreur `403 Forbidden` sur `binaries.prisma.sh`), il bascule automatiquement sur `database/schema.sql`, soit avec `psql` s'il est installé, soit en vous guidant pour le **coller dans l'éditeur SQL de Supabase** : *SQL Editor → New query → coller → Run*. Le contenu du fichier est même copié dans votre presse-papiers quand c'est possible.
+
+Le script SQL est **idempotent** (relançable sans danger) et produit exactement la même base que les migrations Prisma. Il active aussi la sécurité **Row Level Security** pour que les tables ne soient pas exposées par l'API REST publique de Supabase.
+
+#### 3. Créer les comptes de démonstration
+
+```bash
+bash scripts/3-seed.sh
+```
+
+Même principe : seed Prisma, ou repli automatique sur `database/seed_demo.sql` (à coller dans l'éditeur SQL si besoin).
+
+#### 4. Déployer sur Render
+
+Render lit votre code sur **GitHub**. Préparez un compte GitHub et un **dépôt vide** (<https://github.com/new>, sans README), puis un compte Render (<https://render.com>).
+
+```bash
+bash scripts/4-deployer-render.sh
+```
+
+Le script prépare le dépôt Git (en **refusant** d'y inclure un fichier `.env`), l'envoie sur GitHub, puis affiche **le lien à ouvrir** et **les valeurs à copier** dans Render :
+
+| Service Render | Variable | Valeur |
+|---|---|---|
+| `mmadi-sante-api` | `DATABASE_URL` | chaîne du pooler, port 6543, avec `?pgbouncer=true` |
+| `mmadi-sante-api` | `DIRECT_URL` | chaîne directe ou « Session pooler », port 5432 |
+| `mmadi-sante-api` | `FRONTEND_URL` | `https://mmadi-sante-web.onrender.com` (sans `/` final) |
+| `mmadi-sante-web` | `NEXT_PUBLIC_API_URL` | `https://mmadi-sante-api.onrender.com`**`/api/v1`** |
+
+`JWT_SECRET` et `ENCRYPTION_KEY` sont générés automatiquement par Render.
+
+> ⚠ **L'URL de l'API côté site doit contenir son chemin complet `/api/v1`.** Sans lui, tous les appels répondent « 404 ». Le site ajoute le chemin manquant par sécurité (avec un avertissement dans la console du navigateur), mais corrigez la variable.
+>
+> ⚠ `NEXT_PUBLIC_API_URL` est **figée à la construction du site** : après l'avoir modifiée, relancez « Manual Deploy → Deploy latest commit » sur `mmadi-sante-web`.
+
+Cliquez ensuite sur **Apply** (5 à 10 minutes pour le premier déploiement). Au démarrage, l'API applique elle-même les migrations (`DIRECT_URL`), puis écoute.
+
+> **Adresses réelles** : si un nom de service est déjà pris, Render y ajoute un suffixe (ex. `mmadi-sante-api-x7k2.onrender.com`). Vérifiez l'adresse affichée en haut de chaque service et corrigez `FRONTEND_URL` / `NEXT_PUBLIC_API_URL` si besoin. `bash scripts/afficher-valeurs-render.sh NOM-API NOM-SITE` réaffiche les valeurs adaptées.
+
+#### 5. Vérifier
+
+1. Ouvrez `https://<votre-api>.onrender.com/api/v1/sante` → vous devez voir `{"statut":"ok","baseDeDonnees":"ok"}`.
+2. Ouvrez `https://<votre-site>.onrender.com`, connectez-vous avec un compte de démonstration.
+
+#### 6. Sécuriser après la démonstration
+
+1. Connectez-vous en administrateur, créez votre propre compte administrateur, puis **supprimez les comptes `@mmadisante.demo`**.
+2. Dans Render, service `mmadi-sante-web`, passez `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` à `false` et relancez un déploiement (le site affiche sinon les comptes de démo sur la page de connexion).
+
+### Plans gratuits : ce qu'il faut savoir
+
+- ⏱ **L'API Render gratuite se met en veille après environ 15 minutes sans visite.** La première requête suivante prend 30 à 60 secondes : le site affiche alors « le serveur se réveille » et réessaie tout seul. Le **site**, lui, est statique : il n'est jamais mis en veille.
+- ⏸ **Un projet Supabase gratuit est mis en pause après 7 jours sans activité** : réactivez-le depuis le tableau de bord (« Restore project »).
+- 💾 La base gratuite est limitée à 500 Mo : les fichiers y étant stockés, elle se remplit vite. Pour un usage durable, déplacez les fichiers vers Supabase Storage.
+
+### Autre hébergeur (Railway, etc.)
+
+Aucun fichier de configuration n'est fourni pour Railway. Le principe reste le même : un service Node pour `backend/` (build : `npm install && npx prisma generate`, démarrage : `npm start`), un hébergement statique pour le dossier `frontend/out` produit par `npm run build`, et les mêmes variables d'environnement (voir ci-dessous).
+
+---
+
+## Variables d'environnement
+
+Chaque variable est documentée en détail dans `backend/.env.example` et `frontend/.env.example`.
+
+| Variable | Où | Rôle |
+|---|---|---|
+| `DATABASE_URL` | API | connexion de l'API à la base (Supabase : pooler, **6543**, `?pgbouncer=true`) |
+| `DIRECT_URL` | API | connexion pour les migrations (Supabase : **5432**) ; en local, identique à `DATABASE_URL` |
+| `JWT_SECRET` | API | clé de signature des connexions (32 caractères minimum) |
+| `ENCRYPTION_KEY` | API | clé de chiffrement du numéro de carte d'identité (**ne jamais la perdre**) |
+| `FRONTEND_URL` | API | adresse du site autorisé à appeler l'API (CORS) ; obligatoire en production |
+| `JWT_EXPIRES_IN` | API | durée d'une connexion (`8h` par défaut) |
+| `MAX_FILE_MB` | API | taille maximale par fichier (5 par défaut) |
+| `NODE_ENV` | API | `production` sur l'hébergeur |
+| `SKIP_MIGRATE` | API | `true` pour ne pas lancer les migrations au démarrage |
+| `PRISMA_ADAPTER_PG` | API | mode « sans binaire » (avancé, voir plus bas) |
+| `NEXT_PUBLIC_API_URL` | site | adresse de l'API **avec `/api/v1`** (figée au build) |
+| `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` | site | `true` affiche les comptes de démo sur la page de connexion |
+
+---
+
+## Sécurité : ce qui est en place
+
+- **Contrôle d'accès côté serveur** sur chaque route (`backend/src/lib/acces.js`, `middleware/auth.js`). Le rôle n'est jamais lu dans le jeton : il est relu en base à chaque requête, donc un compte supprimé perd son accès immédiatement.
+- **Inscription publique = PATIENT uniquement**, quel que soit ce que le client envoie. Les comptes médecin et administrateur sont créés par un administrateur.
+- **Mots de passe hachés avec bcrypt** (coût 12, via `bcryptjs`, implémentation JavaScript du même algorithme, sans compilation native), **authentification par jeton JWT**.
+- **Numéro de carte d'identité chiffré en base** (AES-256-GCM) ; le hash du mot de passe et le contenu des fichiers ne sont jamais renvoyés dans les listes.
+- **Fichiers** : PDF, JPG, PNG uniquement, 5 Mo maximum, **signature binaire vérifiée** (un faux PDF est refusé), 50 documents par utilisateur, téléchargement uniquement via une route protégée.
+- Limitation des tentatives de connexion, en-têtes de sécurité (Helmet), CORS restreint au site déclaré, validation stricte de toutes les entrées.
+- **Supabase** : Row Level Security activée sans politique sur les 3 tables, pour qu'elles ne soient pas lisibles via l'API REST publique.
+- Le dépôt exclut tous les fichiers `.env` ; le script de déploiement vérifie qu'aucun n'est envoyé.
+
+---
+
+## API : routes principales
+
+Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <jeton>`.
+
+| Méthode et route | Profil autorisé | Rôle |
+|---|---|---|
+| `GET /sante` | public | état de l'API et de la base |
+| `POST /auth/inscription` | public | crée un compte **patient** |
+| `POST /auth/connexion` | public | connexion, renvoie le jeton |
+| `GET /auth/moi` | connecté | compte courant |
+| `GET` / `PUT /profil` | connecté | lire / modifier **ses** informations |
+| `PUT /profil/mot-de-passe` | connecté | changer son mot de passe |
+| `GET` / `POST /profil/documents` | connecté | lister / envoyer **ses** documents (champ `fichiers`, 5 max) |
+| `GET /documents/:id` | propriétaire, médecin attribué, admin | télécharger un document |
+| `DELETE /documents/:id` | propriétaire, admin | supprimer un document |
+| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche et documents d'un utilisateur |
+| `GET /medecin/patients` | médecin | **ses** patients attribués |
+| `GET /admin/statistiques`, `/admin/utilisateurs`, `/admin/documents`, `/admin/attributions` | admin | consultation globale |
+| `POST /admin/utilisateurs` | admin | créer un compte de n'importe quel profil |
+| `DELETE /admin/utilisateurs/:id` | admin | supprimer un utilisateur (et ses documents) |
+| `POST` / `DELETE /admin/attributions` | admin | attribuer / retirer un patient d'un médecin |
+
+---
+
+## En cas d'erreur
+
+### Installation et base de données
+
+**`Failed to fetch sha256 checksum … binaries.prisma.sh … 403 Forbidden`** (au `prisma generate` ou `prisma migrate deploy`)
+Votre réseau (entreprise, école, proxy) bloque le téléchargement des outils Prisma. **Ce n'est pas grave** : utilisez le chemin SQL. `bash scripts/2-schema.sh` et `3-seed.sh` basculent seuls dessus ; à la main, collez `database/schema.sql` puis `database/seed_demo.sql` dans l'éditeur SQL de Supabase. Sur Render, le téléchargement fonctionne normalement.
+*Avancé (Linux/macOS, pour lancer l'API en local malgré tout)* : `PRISMA_CLIENT_ENGINE_TYPE=client PRISMA_SCHEMA_ENGINE_BINARY=/bin/true npx prisma generate`, puis ajoutez `PRISMA_ADAPTER_PG=true` dans `backend/.env`.
+
+**`P1001 : Can't reach database server`**
+- Sur Supabase, la « Direct connection » (`db.xxxx.supabase.co`) est en **IPv6** : prenez la chaîne « **Session pooler** » (port 5432) pour `DIRECT_URL`.
+- Vérifiez que le projet Supabase n'est pas **en pause** (gratuit : pause après 7 jours d'inactivité).
+
+**`P1000 : Authentication failed`**
+Mot de passe erroné. Réinitialisez-le dans Supabase (*Project Settings → Database → Reset database password*) puis relancez `bash scripts/1-configurer.sh`. S'il contient des caractères spéciaux (`@ : / # ? %`), laissez le script l'encoder : ne le collez pas à la main dans l'URL.
+
+**`prepared statement "s0" already exists`** (ou erreurs de « prepared statement »)
+`DATABASE_URL` passe par le pooler (6543) sans `?pgbouncer=true`. Ajoutez-le à la fin de l'adresse.
+
+**`P3005 : The database schema is not empty`**
+Les tables ont été créées avec `schema.sql` : sans conséquence. L'API détecte que les tables existent et démarre ; vous pouvez aussi ajouter `SKIP_MIGRATE=true`.
+
+**Les migrations échouent alors que `DATABASE_URL` fonctionne**
+`DIRECT_URL` utilise le port 6543. Les migrations exigent le port **5432**.
+
+### Déploiement Render
+
+**Le build de l'API échoue ou l'API ne démarre pas** : ouvrez l'onglet **Logs** du service. Message `Variable d'environnement manquante : …` → renseignez-la dans *Environment*. Message `FRONTEND_URL est obligatoire en production` → renseignez l'adresse du site.
+
+**Le site s'affiche mais « Impossible de joindre le serveur »**
+Sur le plan gratuit, l'API **dort** : patientez une minute (le site réessaie seul). Si le problème persiste : ouvrez `https://<votre-api>.onrender.com/api/v1/sante`.
+
+**Le navigateur affiche une erreur « CORS » (console, touche F12)**
+`FRONTEND_URL` ne correspond pas exactement à l'adresse du site : pas de `/` final, `https` et non `http`, bon suffixe Render. Corrigez-la dans l'API, elle redémarre seule.
+
+**Toutes les requêtes répondent « 404 » ou « Route introuvable »**
+`NEXT_PUBLIC_API_URL` n'a pas son chemin complet. Elle doit finir par **`/api/v1`**. Corrigez-la puis relancez un déploiement du site.
+
+**Après déploiement, le site appelle encore `localhost:4000`**
+`NEXT_PUBLIC_API_URL` n'était pas définie au moment de la construction. Définissez-la puis « Manual Deploy → **Clear build cache & deploy** ».
+
+**Les numéros de carte d'identité n'apparaissent plus**
+`ENCRYPTION_KEY` a changé. Rétablissez l'ancienne valeur ; les numéros chiffrés avec une autre clé ne sont pas récupérables.
+
+### Scripts
+
+**`$'\r': command not found`** (Windows) : les fins de ligne ont été converties. Lancez `sed -i 's/\r$//' scripts/*.sh`, ou re-clonez le dépôt (le fichier `.gitattributes` l'évite).
+
+**`Permission denied`** : lancez les scripts avec `bash scripts/nom.sh` (au lieu de `./scripts/nom.sh`).
+
+**`git push` refusé** : le dépôt GitHub doit être **vide**. En HTTPS, GitHub n'accepte pas votre mot de passe de compte : créez un *Personal access token (classic)* avec la case `repo` (<https://github.com/settings/tokens>) et utilisez-le comme mot de passe.
+
+### Utilisation
+
+**« Session invalide ou expirée »** : une connexion dure 8 h (`JWT_EXPIRES_IN`) ; reconnectez-vous.
+**« Fichier refusé »** : seuls les vrais PDF, JPG et PNG de 5 Mo maximum sont acceptés.
+**Un médecin ne voit aucun patient** : c'est normal tant que l'administrateur ne lui en a pas attribué (fiche du patient → « Médecins attribués »).
+
+---
+
+## Limites et pistes d'amélioration
+
+- **Hébergement de données de santé (HDS)** : indispensable en France pour de vraies données de patients ; non couvert par Render/Supabase.
+- **Pas de journal d'audit** des consultations (qui a lu quel dossier) : à ajouter avant un usage réel.
+- **Pas de réinitialisation de mot de passe par e-mail ni de vérification d'adresse e-mail.**
+- Le jeton de connexion est conservé dans le navigateur (`localStorage`) : simple, mais moins protégé qu'un cookie `HttpOnly` face à une faille XSS.
+- Les fichiers sont dans la base (demandé pour ce projet) : peu adapté à de gros volumes ; envisagez Supabase Storage.
+- Le déploiement sur Render et Supabase n'a pas pu être exécuté depuis l'environnement de développement de ce projet : les scripts, la base, l'API et le site ont été testés en local (voir le récapitulatif de livraison). Le premier déploiement réel peut demander un ajustement des adresses (suffixes Render), expliqué plus haut.

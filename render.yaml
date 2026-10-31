@@ -1,0 +1,73 @@
+# ============================================================================
+#  MmadiSanté — Blueprint Render (« Infrastructure as code »)
+#  Déploiement : https://dashboard.render.com/blueprint/new?repo=<adresse de votre dépôt GitHub>
+#  (ou : Render → New → Blueprint → choisir le dépôt). Le script scripts/4-deployer-render.sh vous guide.
+#
+#  La base de données est hébergée sur SUPABASE (pas sur Render) : voir le README.
+#  Les variables « sync: false » vous seront demandées par Render au moment de la création.
+#
+#  ⚠ PLAN GRATUIT : l'API se met en veille après ~15 min sans visite (1er appel suivant : 30 à 60 s).
+#    Le site, lui, est un site statique : il n'est jamais mis en veille.
+# ============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  #  1) L'API (Node.js + Express + Prisma)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: mmadi-sante-api
+    runtime: node
+    plan: free
+    region: frankfurt # Europe (Francfort) ; à changer si besoin (oregon, ohio, singapore...)
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    # « npm start » applique d'abord les migrations Prisma (via DIRECT_URL) puis lance l'API.
+    startCommand: npm start
+    healthCheckPath: /api/v1/sante
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Connexion de l'API pendant son fonctionnement — Supabase « Transaction pooler », PORT 6543,
+      # avec ?pgbouncer=true à la fin.
+      - key: DATABASE_URL
+        sync: false
+      # Connexion utilisée UNIQUEMENT pour les migrations — Supabase « Direct connection » ou
+      # « Session pooler », PORT 5432.
+      - key: DIRECT_URL
+        sync: false
+      # Adresse du site web (sans « / » final), ex. https://mmadi-sante-web.onrender.com — protection CORS.
+      - key: FRONTEND_URL
+        sync: false
+      # Secrets générés automatiquement par Render (valeurs aléatoires, conservées d'un déploiement à l'autre).
+      # ⚠ Ne supprimez jamais ENCRYPTION_KEY : les numéros de carte d'identité deviendraient illisibles.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: MAX_FILE_MB
+        value: "5"
+
+  # ---------------------------------------------------------------------------
+  #  2) Le site web (Next.js, export statique → site statique gratuit)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: mmadi-sante-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: out
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # ⚠⚠ Adresse de l'API AVEC son chemin complet « /api/v1 », ex. https://mmadi-sante-api.onrender.com/api/v1
+      # Valeur figée à la construction : après modification, relancez « Manual Deploy → Deploy latest commit ».
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+      # Affiche les comptes de démonstration sur la page de connexion. Mettre « false » en usage réel !
+      - key: NEXT_PUBLIC_AFFICHER_COMPTES_DEMO
+        value: "true"

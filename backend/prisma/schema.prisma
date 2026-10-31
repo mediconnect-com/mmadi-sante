@@ -1,0 +1,89 @@
+// Schéma Prisma de MmadiSanté (PostgreSQL).
+//
+// IMPORTANT (Supabase / pooler) :
+//   - DATABASE_URL = chaîne du pooler, port 6543, avec ?pgbouncer=true  -> utilisée à l'EXÉCUTION de l'API
+//   - DIRECT_URL   = connexion directe (ou "Session pooler"), port 5432 -> utilisée pour les MIGRATIONS
+// En local (PostgreSQL classique), les deux variables peuvent être identiques.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Profils utilisateurs
+enum Role {
+  PATIENT
+  MEDECIN
+  ADMIN
+}
+
+/// Catégories de documents médicaux
+enum CategorieDocument {
+  ORDONNANCE
+  DIAGNOSTIC
+  ANALYSE
+  COMPTE_RENDU
+  AUTRE
+}
+
+/// Un compte utilisateur (patient, médecin ou administrateur) et ses informations personnelles.
+model Utilisateur {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                 String   @unique
+  motDePasseHash        String   @map("mot_de_passe_hash")
+  role                  Role     @default(PATIENT)
+  nom                   String
+  prenom                String
+  adresse               String?
+  telephone             String?
+  /// Numéro de pièce d'identité, chiffré (AES-256-GCM) par l'API avant enregistrement.
+  carteIdentiteChiffree String?  @map("carte_identite_chiffree")
+  creeLe                DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
+  modifieLe             DateTime @default(now()) @updatedAt @map("modifie_le") @db.Timestamptz(6)
+
+  documents    Document[]
+  commePatient Attribution[] @relation("AttributionPatient")
+  commeMedecin Attribution[] @relation("AttributionMedecin")
+
+  @@index([role])
+  @@map("utilisateurs")
+}
+
+/// Un document (ordonnance, diagnostic, ...) stocké directement dans la base.
+model Document {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proprietaireId String            @map("proprietaire_id") @db.Uuid
+  nomFichier     String            @map("nom_fichier")
+  typeMime       String            @map("type_mime")
+  tailleOctets   Int               @map("taille_octets")
+  categorie      CategorieDocument @default(AUTRE)
+  description    String?
+  /// Contenu binaire du fichier (bytea).
+  contenu        Bytes
+  creeLe         DateTime          @default(now()) @map("cree_le") @db.Timestamptz(6)
+
+  proprietaire Utilisateur @relation(fields: [proprietaireId], references: [id], onDelete: Cascade)
+
+  @@index([proprietaireId])
+  @@map("documents")
+}
+
+/// Attribution d'un patient à un médecin (un patient peut avoir plusieurs médecins).
+model Attribution {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientId String   @map("patient_id") @db.Uuid
+  medecinId String   @map("medecin_id") @db.Uuid
+  creeLe    DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
+
+  patient Utilisateur @relation("AttributionPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  medecin Utilisateur @relation("AttributionMedecin", fields: [medecinId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, medecinId])
+  @@index([medecinId])
+  @@map("attributions")
+}

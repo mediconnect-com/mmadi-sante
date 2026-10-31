@@ -1,0 +1,18 @@
+# PostgreSQL de TEST en local (facultatif) :   docker compose up -d
+# Les informations correspondent aux valeurs par défaut de scripts/1-configurer.sh (choix 2).
+services:
+  base:
+    image: postgres:16
+    container_name: mmadi-sante-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mmadi
+      POSTGRES_PASSWORD: mmadi
+      POSTGRES_DB: mmadisante
+    ports:
+      - "5432:5432"
+    volumes:
+      - donnees_postgres:/var/lib/postgresql/data
+
+volumes:
+  donnees_postgres:

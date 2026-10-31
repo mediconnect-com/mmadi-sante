@@ -1,0 +1,21 @@
+# Dépendances et builds
+node_modules/
+.next/
+out/
+
+# Secrets : ne JAMAIS publier (tous les fichiers .env, sauf les modèles .env.example)
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env.local
+frontend/.env.production
+
+# Divers
+*.log
+*.tmp
+.DS_Store
+.vscode/
+coverage/
