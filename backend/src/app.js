@@ -42,6 +42,9 @@ v1.use('/utilisateurs', require('./routes/utilisateurs'));
 v1.use('/documents', require('./routes/documents'));
 v1.use('/medecin', require('./routes/medecin'));
 v1.use('/admin', require('./routes/admin'));
+v1.use('/specialites', require('./routes/specialites'));
+v1.use('/medecins', require('./routes/medecins'));
+v1.use('/rendez-vous', require('./routes/rendezvous'));
 
 app.use('/api/v1', v1);
 app.get('/', (req, res) => res.json({ nom: 'API MmadiSanté', version: 'v1', sante: '/api/v1/sante' }));

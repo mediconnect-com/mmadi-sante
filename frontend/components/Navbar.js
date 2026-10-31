@@ -9,14 +9,20 @@ export default function Navbar() {
   const router = useRouter();
 
   const liens = [];
-  if (utilisateur?.role === 'PATIENT') liens.push({ href: '/profil/', texte: 'Mon dossier' });
+  if (utilisateur?.role === 'PATIENT') {
+    liens.push({ href: '/profil/', texte: 'Mon dossier' });
+    liens.push({ href: '/rendez-vous/', texte: 'Rendez-vous' });
+  }
   if (utilisateur?.role === 'MEDECIN') {
     liens.push({ href: '/medecin/', texte: 'Mes patients' });
+    liens.push({ href: '/rendez-vous/', texte: 'Rendez-vous' });
     liens.push({ href: '/profil/', texte: 'Mon profil' });
   }
   if (utilisateur?.role === 'ADMIN') {
     liens.push({ href: '/admin/', texte: 'Utilisateurs' });
     liens.push({ href: '/admin/documents/', texte: 'Documents' });
+    liens.push({ href: '/rendez-vous/', texte: 'Rendez-vous' });
+    liens.push({ href: '/admin/specialites/', texte: 'Spécialités' });
     liens.push({ href: '/profil/', texte: 'Mon profil' });
   }
 

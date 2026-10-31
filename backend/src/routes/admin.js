@@ -1,11 +1,13 @@
 // Espace administrateur : TOUTES les routes exigent le profil ADMIN (vérifié côté serveur).
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { chiffrer } = require('../lib/chiffrement');
 const { asyncHandler, ErreurHttp } = require('../lib/erreurs');
-const { schemaCreationUtilisateur, schemaAttribution, idValide } = require('../lib/validation');
-const { utilisateurPublic, selectDocumentSansContenu } = require('../lib/serialiser');
+const { schemaCreationUtilisateur, schemaAttribution, schemaMajMedecin, idValide } = require('../lib/validation');
+const { utilisateurPublic, INCLURE_SPECIALITES, selectDocumentSansContenu } = require('../lib/serialiser');
+const { remplacerSpecialites } = require('../lib/medecins');
 const { authentifier, exigerRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -44,7 +46,7 @@ router.get(
       where,
       orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
       take: 500,
-      include: { _count: { select: { documents: true } } },
+      include: { ...INCLURE_SPECIALITES, _count: { select: { documents: true } } },
     });
     // Minimisation : le numéro de carte d'identité n'apparaît pas dans la liste, seulement dans la fiche détaillée.
     const utilisateurs = lignes.map((u) => {
@@ -60,21 +62,64 @@ router.post(
   '/utilisateurs',
   asyncHandler(async (req, res) => {
     const d = schemaCreationUtilisateur.parse(req.body);
-    const existant = await prisma.utilisateur.findUnique({ where: { email: d.email }, select: { id: true } });
-    if (existant) throw new ErreurHttp(409, 'Un compte existe déjà avec cet e-mail.');
-    const u = await prisma.utilisateur.create({
-      data: {
-        email: d.email,
-        motDePasseHash: await bcrypt.hash(d.motDePasse, 12),
-        role: d.role,
-        nom: d.nom,
-        prenom: d.prenom,
-        adresse: d.adresse,
-        telephone: d.telephone,
-        carteIdentiteChiffree: chiffrer(d.carteIdentite),
-      },
+    if (d.email) {
+      const existant = await prisma.utilisateur.findUnique({ where: { email: d.email }, select: { id: true } });
+      if (existant) throw new ErreurHttp(409, 'Un compte existe déjà avec cet e-mail.');
+    }
+    // Fiche médecin sans compte : mot de passe aléatoire, jamais communiqué => aucune connexion possible.
+    const secret = d.sansCompte ? crypto.randomBytes(32).toString('hex') : d.motDePasse;
+    const motDePasseHash = await bcrypt.hash(secret, d.sansCompte ? 10 : 12);
+    const u = await prisma.$transaction(async (tx) => {
+      const cree = await tx.utilisateur.create({
+        data: {
+          email: d.email,
+          motDePasseHash,
+          role: d.role,
+          sansCompte: d.sansCompte,
+          nom: d.nom,
+          prenom: d.prenom,
+          adresse: d.adresse,
+          telephone: d.telephone,
+          adresseProfessionnelle: d.adresseProfessionnelle,
+          carteIdentiteChiffree: chiffrer(d.carteIdentite),
+        },
+      });
+      if (d.role === 'MEDECIN' && d.specialiteIds) await remplacerSpecialites(tx, cree.id, d.specialiteIds);
+      return tx.utilisateur.findUnique({ where: { id: cree.id }, include: INCLURE_SPECIALITES });
     });
     res.status(201).json({ utilisateur: utilisateurPublic(u) });
+  })
+);
+
+// PUT /api/v1/admin/medecins/:id — modifie la fiche d'un médecin (identité, téléphone, adresse pro, spécialités)
+router.put(
+  '/medecins/:id',
+  asyncHandler(async (req, res) => {
+    const id = idValide(req.params.id);
+    const d = schemaMajMedecin.parse(req.body);
+    const fournis = new Set(Object.keys(req.body || {}));
+    const cible = await prisma.utilisateur.findFirst({ where: { id, role: 'MEDECIN' }, select: { id: true, sansCompte: true } });
+    if (!cible) throw new ErreurHttp(404, 'Médecin introuvable.');
+
+    const data = {};
+    if (d.nom !== undefined) data.nom = d.nom;
+    if (d.prenom !== undefined) data.prenom = d.prenom;
+    if (fournis.has('telephone')) data.telephone = d.telephone;
+    if (fournis.has('adresseProfessionnelle')) data.adresseProfessionnelle = d.adresseProfessionnelle;
+    if (fournis.has('email')) {
+      // L'e-mail d'un compte avec connexion est son identifiant : il ne peut pas être vidé.
+      if (!d.email && !cible.sansCompte) throw new ErreurHttp(400, "L'e-mail d'un compte de connexion ne peut pas être supprimé.");
+      if (d.email) {
+        const autre = await prisma.utilisateur.findUnique({ where: { email: d.email }, select: { id: true } });
+        if (autre && autre.id !== id) throw new ErreurHttp(409, 'Un compte existe déjà avec cet e-mail.');
+      }
+      data.email = d.email;
+    }
+    const u = await prisma.$transaction(async (tx) => {
+      if (fournis.has('specialiteIds')) await remplacerSpecialites(tx, id, d.specialiteIds || []);
+      return tx.utilisateur.update({ where: { id }, data, include: INCLURE_SPECIALITES });
+    });
+    res.json({ utilisateur: utilisateurPublic(u) });
   })
 );
 

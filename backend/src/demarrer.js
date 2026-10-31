@@ -16,14 +16,29 @@ async function main() {
     } catch {
       console.warn('[démarrage] La migration automatique a échoué. Vérification des tables existantes...');
       const prisma = require('./lib/prisma');
+      let tablesExistent = true;
       try {
         await prisma.utilisateur.count();
-        console.warn('[démarrage] Les tables existent déjà (schéma créé via database/schema.sql ?) : on continue.');
       } catch {
+        tablesExistent = false;
+      }
+      if (!tablesExistent) {
         console.error(
           '[démarrage] ERREUR : impossible de migrer et les tables sont absentes.\n' +
             '  -> Vérifiez DIRECT_URL (port 5432) dans les variables d\'environnement,\n' +
             '  -> ou exécutez database/schema.sql dans l\'éditeur SQL de Supabase, puis relancez.'
+        );
+        process.exit(1);
+      }
+      console.warn('[démarrage] Les tables existent déjà (schéma créé via database/schema.sql ?) : on continue.');
+      // Met à jour la base avec les évolutions récentes (spécialités, rendez-vous...) sans toucher aux données existantes.
+      try {
+        const { appliquerMigrationsIdempotentes } = require('./lib/migrationsSql');
+        await appliquerMigrationsIdempotentes();
+      } catch (e) {
+        console.error(
+          '[démarrage] ERREUR pendant la mise à jour de la base : ' + e.message + '\n' +
+            '  -> Exécutez database/mise_a_jour_v2.sql dans l\'éditeur SQL de Supabase, puis relancez.'
         );
         process.exit(1);
       }

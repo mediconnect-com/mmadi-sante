@@ -17,8 +17,9 @@ JOURNAL="$(mktemp 2>/dev/null || echo "$RACINE/.seed-journal.tmp")"
 
 titre "Comptes de démonstration"
 avertir "Ces comptes et leur mot de passe sont PUBLICS (écrits dans le README)."
-echo "   Si votre site est accessible sur Internet, supprimez-les (via le compte administrateur)"
-echo "   dès que vous avez fini la démonstration."
+echo "   Ils ne sont plus affichés sur l'écran de connexion du site. Si votre site est accessible sur Internet,"
+echo "   créez votre propre administrateur puis supprimez-les :  cd backend && npm run supprimer-demo"
+echo "   (ou collez database/supprimer_comptes_demo.sql dans l'éditeur SQL ; voir le README)."
 printf '\n'
 confirmer "Créer les comptes de démonstration maintenant ?" "o" || { info "Étape ignorée à votre demande."; exit 0; }
 

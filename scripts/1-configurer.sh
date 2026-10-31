@@ -167,8 +167,6 @@ if [ ! -f "$RACINE/frontend/.env.local" ]; then
   cat > "$RACINE/frontend/.env.local" <<'EOF'
 # ⚠ L'adresse de l'API doit inclure le chemin COMPLET « /api/v1 »
 NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-# Affiche les comptes de démonstration sur la page de connexion (à retirer en usage réel)
-NEXT_PUBLIC_AFFICHER_COMPTES_DEMO=true
 EOF
   ok "frontend/.env.local écrit (API locale : http://localhost:4000/api/v1)."
 fi

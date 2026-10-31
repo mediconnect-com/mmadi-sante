@@ -2,8 +2,29 @@
 // Le hash du mot de passe et le contenu binaire des fichiers ne sortent JAMAIS par ici.
 const { dechiffrer } = require('./chiffrement');
 
+/** Sélection Prisma à ajouter (include) pour charger les spécialités d'un médecin. */
+const INCLURE_SPECIALITES = {
+  specialites: { include: { specialite: true }, orderBy: { specialite: { libelle: 'asc' } } },
+};
+
+/** Spécialités d'un utilisateur chargé avec INCLURE_SPECIALITES. */
+function specialitesPubliques(u) {
+  return (u.specialites || []).map((l) => ({
+    id: l.specialite.id,
+    libelle: l.specialite.libelle,
+    groupe: l.specialite.groupe,
+    type: l.specialite.type,
+    actif: l.specialite.actif,
+  }));
+}
+
+/** « MEDECIN » ou « PROFESSIONNEL_SANTE » (dentiste, kiné, pharmacien...) selon les spécialités. */
+function typeProfessionnel(specialites) {
+  return specialites.length > 0 && specialites.every((s) => s.type === 'PROFESSIONNEL_SANTE') ? 'PROFESSIONNEL_SANTE' : 'MEDECIN';
+}
+
 function utilisateurPublic(u) {
-  return {
+  const reponse = {
     id: u.id,
     email: u.email,
     role: u.role,
@@ -14,6 +35,34 @@ function utilisateurPublic(u) {
     carteIdentite: dechiffrer(u.carteIdentiteChiffree),
     creeLe: u.creeLe,
     modifieLe: u.modifieLe,
+  };
+  if (u.role === 'MEDECIN') {
+    reponse.adresseProfessionnelle = u.adresseProfessionnelle;
+    reponse.sansCompte = u.sansCompte;
+    if (u.specialites) {
+      reponse.specialites = specialitesPubliques(u);
+      reponse.typeProfessionnel = typeProfessionnel(reponse.specialites);
+    }
+  }
+  return reponse;
+}
+
+/**
+ * Fiche d'un médecin telle que la voient les autres utilisateurs (patients, administrateur) :
+ * identité, spécialités, téléphone, adresse professionnelle. Source unique : la fiche en base,
+ * donc toutes les pages de l'application affichent les mêmes informations. Jamais d'e-mail ni de hash.
+ */
+function medecinPublic(u) {
+  const specialites = specialitesPubliques(u);
+  return {
+    id: u.id,
+    nom: u.nom,
+    prenom: u.prenom,
+    telephone: u.telephone,
+    adresseProfessionnelle: u.adresseProfessionnelle,
+    specialites,
+    typeProfessionnel: typeProfessionnel(specialites),
+    sansCompte: u.sansCompte,
   };
 }
 
@@ -29,4 +78,11 @@ const selectDocumentSansContenu = {
   creeLe: true,
 };
 
-module.exports = { utilisateurPublic, selectDocumentSansContenu };
+module.exports = {
+  utilisateurPublic,
+  medecinPublic,
+  specialitesPubliques,
+  typeProfessionnel,
+  INCLURE_SPECIALITES,
+  selectDocumentSansContenu,
+};

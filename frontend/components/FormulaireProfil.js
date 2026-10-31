@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { appelApi } from '@/lib/api';
 import { Alerte, Bouton, Champ } from './ui';
+import SelecteurSpecialites from './SelecteurSpecialites';
 
 /** Modification des informations personnelles du compte connecté. */
 export default function FormulaireProfil({ utilisateur, surMaj }) {
@@ -11,7 +12,10 @@ export default function FormulaireProfil({ utilisateur, surMaj }) {
     adresse: utilisateur.adresse || '',
     telephone: utilisateur.telephone || '',
     carteIdentite: utilisateur.carteIdentite || '',
+    adresseProfessionnelle: utilisateur.adresseProfessionnelle || '',
+    specialiteIds: (utilisateur.specialites || []).map((s) => s.id),
   });
+  const estMedecin = utilisateur.role === 'MEDECIN';
   const [erreur, setErreur] = useState('');
   const [succes, setSucces] = useState('');
   const [enCours, setEnCours] = useState(false);
@@ -23,7 +27,10 @@ export default function FormulaireProfil({ utilisateur, surMaj }) {
     setSucces('');
     setEnCours(true);
     try {
-      const r = await appelApi('/profil', { methode: 'PUT', json: form });
+      // Les champs « médecin » ne sont envoyés qu'à un médecin (le serveur les refuse aux autres profils).
+      const { adresseProfessionnelle, specialiteIds, ...commun } = form;
+      const json = estMedecin ? { ...commun, adresseProfessionnelle, specialiteIds } : commun;
+      const r = await appelApi('/profil', { methode: 'PUT', json });
       surMaj(r.utilisateur);
       setSucces('Vos informations ont été enregistrées.');
     } catch (err) {
@@ -48,6 +55,25 @@ export default function FormulaireProfil({ utilisateur, surMaj }) {
         />
       </div>
       <Champ label="Adresse" valeur={form.adresse} onChange={maj('adresse')} autoComplete="street-address" maxLength={250} />
+      {estMedecin && (
+        <div className="space-y-4 rounded-xl border border-marque-100 bg-marque-50/40 p-4">
+          <p className="text-sm font-semibold text-marque-800">Fiche professionnelle (visible par les patients)</p>
+          <SelecteurSpecialites
+            label="Spécialités"
+            valeur={form.specialiteIds}
+            onChange={maj('specialiteIds')}
+            deja={utilisateur.specialites || []}
+            aide="Une ou plusieurs spécialités, recherche possible."
+          />
+          <Champ
+            label="Adresse professionnelle"
+            valeur={form.adresseProfessionnelle}
+            onChange={maj('adresseProfessionnelle')}
+            maxLength={250}
+            placeholder="Cabinet, rue, code postal, ville"
+          />
+        </div>
+      )}
       <p className="text-sm text-slate-500">
         Adresse e-mail du compte : <strong>{utilisateur.email}</strong>
       </p>

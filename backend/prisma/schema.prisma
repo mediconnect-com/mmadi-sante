@@ -31,16 +31,35 @@ enum CategorieDocument {
   AUTRE
 }
 
+/// Type de professionnel rattaché à une spécialité (permet de distinguer médecins et autres professionnels de santé).
+enum TypeProfessionnel {
+  MEDECIN
+  PROFESSIONNEL_SANTE
+}
+
+/// Cycle de vie d'un rendez-vous.
+enum StatutRendezVous {
+  DEMANDE
+  CONFIRME
+  REFUSE
+  ANNULE
+}
+
 /// Un compte utilisateur (patient, médecin ou administrateur) et ses informations personnelles.
+/// Une « fiche médecin sans compte » (sansCompte = true) n'a pas d'accès à l'application : e-mail facultatif.
 model Utilisateur {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                 String   @unique
+  email                 String?  @unique
   motDePasseHash        String   @map("mot_de_passe_hash")
   role                  Role     @default(PATIENT)
   nom                   String
   prenom                String
   adresse               String?
   telephone             String?
+  /// Adresse du cabinet / lieu d'exercice (fiche médecin).
+  adresseProfessionnelle String? @map("adresse_professionnelle")
+  /// true = fiche créée sans compte de connexion (par un patient ou un administrateur).
+  sansCompte            Boolean  @default(false) @map("sans_compte")
   /// Numéro de pièce d'identité, chiffré (AES-256-GCM) par l'API avant enregistrement.
   carteIdentiteChiffree String?  @map("carte_identite_chiffree")
   creeLe                DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
@@ -49,6 +68,9 @@ model Utilisateur {
   documents    Document[]
   commePatient Attribution[] @relation("AttributionPatient")
   commeMedecin Attribution[] @relation("AttributionMedecin")
+  specialites  MedecinSpecialite[]
+  rdvCommePatient RendezVous[] @relation("RdvPatient")
+  rdvCommeMedecin RendezVous[] @relation("RdvMedecin")
 
   @@index([role])
   @@map("utilisateurs")
@@ -86,4 +108,53 @@ model Attribution {
   @@unique([patientId, medecinId])
   @@index([medecinId])
   @@map("attributions")
+}
+
+/// Une spécialité médicale (ou profession de santé) de la liste prédéfinie, modifiable par l'administrateur.
+/// Une spécialité n'est jamais supprimée : on la désactive (actif = false) pour conserver l'historique.
+model Specialite {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  libelle   String            @unique
+  groupe    String
+  type      TypeProfessionnel @default(MEDECIN)
+  actif     Boolean           @default(true)
+  creeLe    DateTime          @default(now()) @map("cree_le") @db.Timestamptz(6)
+  modifieLe DateTime          @default(now()) @updatedAt @map("modifie_le") @db.Timestamptz(6)
+
+  medecins MedecinSpecialite[]
+
+  @@map("specialites")
+}
+
+/// Liaison médecin <-> spécialités (un médecin peut avoir plusieurs spécialités).
+model MedecinSpecialite {
+  medecinId    String   @map("medecin_id") @db.Uuid
+  specialiteId String   @map("specialite_id") @db.Uuid
+  creeLe       DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
+
+  medecin    Utilisateur @relation(fields: [medecinId], references: [id], onDelete: Cascade)
+  specialite Specialite  @relation(fields: [specialiteId], references: [id], onDelete: Cascade)
+
+  @@id([medecinId, specialiteId])
+  @@index([specialiteId])
+  @@map("medecin_specialites")
+}
+
+/// Un rendez-vous demandé par un patient auprès d'un médecin.
+model RendezVous {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientId String           @map("patient_id") @db.Uuid
+  medecinId String           @map("medecin_id") @db.Uuid
+  dateHeure DateTime         @map("date_heure") @db.Timestamptz(6)
+  motif     String?
+  statut    StatutRendezVous @default(DEMANDE)
+  creeLe    DateTime         @default(now()) @map("cree_le") @db.Timestamptz(6)
+  modifieLe DateTime         @default(now()) @updatedAt @map("modifie_le") @db.Timestamptz(6)
+
+  patient Utilisateur @relation("RdvPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  medecin Utilisateur @relation("RdvMedecin", fields: [medecinId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([medecinId, dateHeure])
+  @@map("rendez_vous")
 }

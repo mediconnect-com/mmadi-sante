@@ -68,6 +68,3 @@ services:
       # Valeur figée à la construction : après modification, relancez « Manual Deploy → Deploy latest commit ».
       - key: NEXT_PUBLIC_API_URL
         sync: false
-      # Affiche les comptes de démonstration sur la page de connexion. Mettre « false » en usage réel !
-      - key: NEXT_PUBLIC_AFFICHER_COMPTES_DEMO
-        value: "true"

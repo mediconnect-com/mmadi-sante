@@ -2,7 +2,8 @@
 // Idempotent : peut être relancé sans créer de doublons (il réinitialise le mot de passe des comptes démo).
 //   Lancer :  npm run seed      (depuis le dossier backend)
 //
-// ⚠ Ces comptes sont PUBLICS (documentés dans le README) : supprimez-les dès que vous passez en usage réel.
+// ⚠ Ces comptes sont PUBLICS (documentés dans le README) : supprimez-les dès que vous passez en usage réel
+//   (voir « npm run supprimer-demo »). Ils ne sont plus affichés sur l'écran de connexion du site.
 const bcrypt = require('bcryptjs');
 const prisma = require('../src/lib/prisma');
 const { chiffrer } = require('../src/lib/chiffrement');
@@ -25,6 +26,8 @@ const COMPTES = [
     prenom: 'Claire',
     adresse: 'Cabinet médical, 12 avenue de la Santé, 69003 Lyon',
     telephone: '+33 6 00 00 00 02',
+    adresseProfessionnelle: 'Cabinet médical, 12 avenue de la Santé, 69003 Lyon',
+    specialites: ['Médecine générale'],
   },
   {
     email: 'patient@mmadisante.demo',
@@ -58,6 +61,7 @@ async function semer() {
       prenom: c.prenom,
       adresse: c.adresse,
       telephone: c.telephone,
+      adresseProfessionnelle: c.adresseProfessionnelle || null,
       carteIdentiteChiffree: chiffrer(c.carteIdentite),
     };
     crees[c.email] = await prisma.utilisateur.upsert({
@@ -65,6 +69,19 @@ async function semer() {
       update: donnees,
       create: { email: c.email, ...donnees },
     });
+  }
+
+  // Spécialités du médecin démo (la liste de référence est créée par la migration 0003).
+  for (const c of COMPTES.filter((x) => x.specialites)) {
+    for (const libelle of c.specialites) {
+      const specialite = await prisma.specialite.findUnique({ where: { libelle } });
+      if (!specialite) continue;
+      await prisma.medecinSpecialite.upsert({
+        where: { medecinId_specialiteId: { medecinId: crees[c.email].id, specialiteId: specialite.id } },
+        update: {},
+        create: { medecinId: crees[c.email].id, specialiteId: specialite.id },
+      });
+    }
   }
 
   // Le médecin démo suit le patient démo « Amina Mmadi » (mais PAS « Paul Durand » : utile pour tester les accès).

@@ -101,8 +101,15 @@ function Contenu() {
                     {u.prenom} {u.nom} <BadgeRole role={u.role} />
                   </p>
                   <p className="truncate text-sm text-slate-500">
-                    {u.email} · {u.telephone || 'pas de mobile'} · {u.nombreDocuments} document(s)
+                    {u.email || 'sans e-mail'} · {u.telephone || 'pas de mobile'} · {u.nombreDocuments} document(s)
                   </p>
+                  {u.role === 'MEDECIN' && (
+                    <p className="text-sm text-slate-500">
+                      {u.specialites && u.specialites.length > 0 ? u.specialites.map((s) => s.libelle).join(', ') : 'Aucune spécialité'}
+                      {u.adresseProfessionnelle ? ` · ${u.adresseProfessionnelle}` : ''}
+                      {u.sansCompte ? ' · fiche sans compte de connexion' : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Link

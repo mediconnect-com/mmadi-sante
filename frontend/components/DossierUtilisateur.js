@@ -7,8 +7,10 @@ import { useRouter } from 'next/navigation';
 import { appelApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formaterDate } from '@/lib/constantes';
-import { Alerte, BadgeRole, Bouton, Carte, Chargement, Page, Selecteur } from './ui';
+import { Alerte, BadgeRole, Bouton, Carte, Champ, Chargement, Page, Selecteur } from './ui';
 import ListeDocuments from './ListeDocuments';
+import CarteMedecin from './CarteMedecin';
+import SelecteurSpecialites from './SelecteurSpecialites';
 
 function Info({ label, valeur }) {
   return (
@@ -39,6 +41,12 @@ function Attributions({ utilisateur, liee, surChangement }) {
 
   const dejaLies = new Set(liee.map((l) => l.id));
   const disponibles = candidats.filter((c) => !dejaLies.has(c.id));
+  // Fiche du médecin / patient sélectionné dans la liste, relue depuis la base (aucune ressaisie).
+  const choisi = disponibles.find((c) => c.id === choix);
+  const libelleCandidat = (c) =>
+    estPatient
+      ? `${c.prenom} ${c.nom}${c.specialites?.length ? ` — ${c.specialites.map((s) => s.libelle).join(', ')}` : ''}`
+      : `${c.prenom} ${c.nom} (${c.email})`;
 
   async function ajouter() {
     if (!choix) return;
@@ -74,20 +82,42 @@ function Attributions({ utilisateur, liee, surChangement }) {
         {liee.length === 0 ? (
           <p className="text-sm text-slate-500">{estPatient ? 'Aucun médecin attribué.' : 'Aucun patient attribué.'}</p>
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {liee.map((l) => (
-              <li key={l.attributionId} className="flex items-center justify-between gap-3 py-2">
-                <span>
-                  <Link href={`/admin/utilisateur/?id=${l.id}`} className="font-medium text-marque-700 hover:underline">
-                    {l.prenom} {l.nom}
-                  </Link>{' '}
-                  <span className="text-sm text-slate-500">{l.email}</span>
-                </span>
-                <Bouton variante="secondaire" onClick={() => retirer(l.attributionId)}>
-                  Retirer
-                </Bouton>
-              </li>
-            ))}
+          <ul className={estPatient ? 'space-y-3' : 'divide-y divide-slate-100'}>
+            {liee.map((l) =>
+              estPatient ? (
+                <li key={l.attributionId}>
+                  <CarteMedecin
+                    medecin={l}
+                    afficherCompte
+                    actions={
+                      <>
+                        <Link
+                          href={`/admin/utilisateur/?id=${l.id}`}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Voir la fiche
+                        </Link>
+                        <Bouton variante="secondaire" onClick={() => retirer(l.attributionId)}>
+                          Retirer
+                        </Bouton>
+                      </>
+                    }
+                  />
+                </li>
+              ) : (
+                <li key={l.attributionId} className="flex items-center justify-between gap-3 py-2">
+                  <span>
+                    <Link href={`/admin/utilisateur/?id=${l.id}`} className="font-medium text-marque-700 hover:underline">
+                      {l.prenom} {l.nom}
+                    </Link>{' '}
+                    <span className="text-sm text-slate-500">{l.email}</span>
+                  </span>
+                  <Bouton variante="secondaire" onClick={() => retirer(l.attributionId)}>
+                    Retirer
+                  </Bouton>
+                </li>
+              )
+            )}
           </ul>
         )}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -98,7 +128,7 @@ function Attributions({ utilisateur, liee, surChangement }) {
               onChange={setChoix}
               options={[
                 { valeur: '', libelle: disponibles.length ? '— Choisir —' : '— Aucun disponible —' },
-                ...disponibles.map((c) => ({ valeur: c.id, libelle: `${c.prenom} ${c.nom} (${c.email})` })),
+                ...disponibles.map((c) => ({ valeur: c.id, libelle: libelleCandidat(c) })),
               ]}
             />
           </div>
@@ -106,8 +136,78 @@ function Attributions({ utilisateur, liee, surChangement }) {
             Attribuer
           </Bouton>
         </div>
+        {choisi && estPatient && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-700">Médecin sélectionné</p>
+            <CarteMedecin medecin={choisi} choisi afficherCompte />
+          </div>
+        )}
+        {choisi && !estPatient && (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            Patient sélectionné : <strong>{choisi.prenom} {choisi.nom}</strong> · {choisi.email} · {choisi.telephone || 'pas de mobile'}
+          </p>
+        )}
         <Alerte>{erreur}</Alerte>
       </div>
+    </Carte>
+  );
+}
+
+/** Modification de la fiche d'un médecin par l'administrateur (PUT /admin/medecins/:id). */
+function FicheMedecin({ utilisateur, surChangement }) {
+  const [form, setForm] = useState({
+    prenom: utilisateur.prenom || '',
+    nom: utilisateur.nom || '',
+    telephone: utilisateur.telephone || '',
+    email: utilisateur.email || '',
+    adresseProfessionnelle: utilisateur.adresseProfessionnelle || '',
+    specialiteIds: (utilisateur.specialites || []).map((s) => s.id),
+  });
+  const [erreur, setErreur] = useState('');
+  const [succes, setSucces] = useState('');
+  const [enCours, setEnCours] = useState(false);
+  const maj = (champ) => (valeur) => setForm((f) => ({ ...f, [champ]: valeur }));
+
+  async function enregistrer(e) {
+    e.preventDefault();
+    setErreur('');
+    setSucces('');
+    setEnCours(true);
+    try {
+      await appelApi(`/admin/medecins/${utilisateur.id}`, { methode: 'PUT', json: form });
+      setSucces('La fiche du médecin a été mise à jour.');
+      await surChangement();
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <Carte titre="Fiche du médecin (modifiable)">
+      <form onSubmit={enregistrer} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Champ label="Prénom" valeur={form.prenom} onChange={maj('prenom')} requis maxLength={100} />
+          <Champ label="Nom" valeur={form.nom} onChange={maj('nom')} requis maxLength={100} />
+          <Champ label="Numéro de téléphone" type="tel" valeur={form.telephone} onChange={maj('telephone')} />
+          <Champ
+            label="Adresse e-mail"
+            type="email"
+            valeur={form.email}
+            onChange={maj('email')}
+            requis={!utilisateur.sansCompte}
+            aide={utilisateur.sansCompte ? 'Facultative (fiche sans compte de connexion).' : "Identifiant de connexion du médecin."}
+          />
+        </div>
+        <Champ label="Adresse professionnelle" valeur={form.adresseProfessionnelle} onChange={maj('adresseProfessionnelle')} maxLength={250} />
+        <SelecteurSpecialites label="Spécialités" valeur={form.specialiteIds} onChange={maj('specialiteIds')} deja={utilisateur.specialites || []} />
+        <Alerte>{erreur}</Alerte>
+        <Alerte type="succes">{succes}</Alerte>
+        <Bouton type="submit" enCours={enCours}>
+          Enregistrer la fiche
+        </Bouton>
+      </form>
     </Carte>
   );
 }
@@ -176,6 +276,16 @@ export default function DossierUtilisateur({ id, admin = false }) {
           <Info label="Numéro de mobile" valeur={u.telephone} />
           <Info label="Adresse" valeur={u.adresse} />
           <Info label="Carte d'identité" valeur={u.carteIdentite} />
+          {u.role === 'MEDECIN' && (
+            <>
+              <Info
+                label="Spécialités"
+                valeur={u.specialites?.length ? u.specialites.map((s) => s.libelle).join(', ') : ''}
+              />
+              <Info label="Adresse professionnelle" valeur={u.adresseProfessionnelle} />
+              {u.sansCompte && <Info label="Compte" valeur="Fiche sans compte de connexion" />}
+            </>
+          )}
           <Info label="Compte créé le" valeur={formaterDate(u.creeLe)} />
           <Info label="Dernière modification" valeur={formaterDate(u.modifieLe)} />
         </dl>
@@ -190,6 +300,9 @@ export default function DossierUtilisateur({ id, admin = false }) {
         />
       </Carte>
 
+      {admin && u.role === 'MEDECIN' && (
+        <FicheMedecin key={u.modifieLe} utilisateur={u} surChangement={charger} />
+      )}
       {admin && u.role === 'PATIENT' && (
         <Attributions utilisateur={u} liee={donnees.medecins || []} surChangement={charger} />
       )}

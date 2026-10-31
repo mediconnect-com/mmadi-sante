@@ -6,11 +6,11 @@ Application web pour saisir et consulter des informations de santé : **nom, pr�
 
 | Profil | Ce qu'il peut faire |
 |---|---|
-| **PATIENT** | Créer son compte, saisir et modifier **ses** informations, envoyer et supprimer **ses** documents. Ne voit jamais les données d'un autre. |
-| **MÉDECIN** | Consulter (lecture seule) les informations et documents des patients **qui lui sont attribués**, et seulement ceux-là. |
-| **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes de tout profil, attribuer les patients aux médecins. |
+| **PATIENT** | Créer son compte, saisir et modifier **ses** informations, envoyer et supprimer **ses** documents, retrouver **ses médecins** (nom, spécialité, téléphone, adresse), **rechercher un médecin** et **prendre rendez-vous**. Ne voit jamais les données d'un autre. |
+| **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations et documents des patients **qui lui sont attribués**, et seulement ceux-là. |
+| **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes et fiches médecins de tout profil, gérer la liste des **spécialités**, attribuer les patients aux médecins. |
 
-Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 24 tests automatisés.
+Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 53 tests automatisés.
 
 **Technologies** : Node.js + Express + Prisma (API) · Next.js + React + Tailwind (site, export statique) · PostgreSQL · interface et commentaires en français.
 
@@ -19,14 +19,16 @@ Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas 
 ## Sommaire
 
 1. [Contenu du projet](#contenu-du-projet)
-2. [Comptes de démonstration](#comptes-de-démonstration)
-3. [Installation locale](#installation-locale)
-4. [Déploiement cloud (Render + Supabase)](#déploiement-cloud-render--supabase)
-5. [Variables d'environnement](#variables-denvironnement)
-6. [Sécurité : ce qui est en place](#sécurité--ce-qui-est-en-place)
-7. [API : routes principales](#api--routes-principales)
-8. [En cas d'erreur](#en-cas-derreur)
-9. [Limites et pistes d'amélioration](#limites-et-pistes-damélioration)
+2. [Médecins, spécialités et rendez-vous](#médecins-spécialités-et-rendez-vous)
+3. [Comptes de démonstration](#comptes-de-démonstration)
+4. [Installation locale](#installation-locale)
+5. [Déploiement cloud (Render + Supabase)](#déploiement-cloud-render--supabase)
+6. [Mettre à jour une application déjà en ligne](#mettre-à-jour-une-application-déjà-en-ligne)
+7. [Variables d'environnement](#variables-denvironnement)
+8. [Sécurité : ce qui est en place](#sécurité--ce-qui-est-en-place)
+9. [API : routes principales](#api--routes-principales)
+10. [En cas d'erreur](#en-cas-derreur)
+11. [Limites et pistes d'amélioration](#limites-et-pistes-damélioration)
 
 ---
 
@@ -37,13 +39,15 @@ mmadi-sante/
 ├── backend/                 API Express + Prisma (routes sous /api/v1)
 │   ├── src/                 code : routes, middleware d'accès, chiffrement, validation
 │   ├── prisma/              schema.prisma, migrations/, seed.js
-│   ├── tests/               24 tests d'accès (npm test)
+│   ├── tests/               53 tests automatisés (npm test)
 │   └── .env.example         variables d'environnement documentées
 ├── frontend/                site Next.js + Tailwind (responsive mobile/tablette)
 │   └── .env.example
 ├── database/
 │   ├── schema.sql           ★ création des tables en SQL pur (éditeur SQL Supabase)
-│   └── seed_demo.sql        ★ comptes de démonstration en SQL pur
+│   ├── mise_a_jour_v2.sql   ★ mise à jour d'une base déjà en service (spécialités, rendez-vous)
+│   ├── seed_demo.sql        ★ comptes de démonstration en SQL pur
+│   └── supprimer_comptes_demo.sql   ★ retire les 4 comptes de démonstration (et eux seuls)
 ├── scripts/                 ★ scripts guidés pour non-développeurs (voir ci-dessous)
 ├── render.yaml              ★ déclaration des services Render (Blueprint)
 ├── docker-compose.yml       PostgreSQL de test en local (facultatif)
@@ -52,7 +56,26 @@ mmadi-sante/
 
 ---
 
+## Médecins, spécialités et rendez-vous
+
+**Spécialités.** Une liste prédéfinie de **59 spécialités et professions** est créée automatiquement avec la base : médecine générale et spécialités courantes, spécialités chirurgicales, santé de la femme et de l'enfant, spécialités médico-techniques et **autres professionnels de santé** (chirurgien-dentiste, sage-femme, kinésithérapeute, pharmacien…). Chaque spécialité a un **type** (`MÉDECIN` ou `PROFESSIONNEL DE SANTÉ`) qui permet de distinguer les médecins des autres professionnels.
+L'administrateur la gère dans le menu **Spécialités** : ajouter, modifier, **désactiver / réactiver**. Une spécialité n'est jamais supprimée : désactivée, elle disparaît des listes de choix mais reste sur les fiches qui l'avaient déjà.
+
+**Fiche médecin.** Nom, prénom, téléphone, e-mail (facultatif pour une fiche sans compte), **adresse professionnelle** (facultative) et **une ou plusieurs spécialités**, choisies dans une liste déroulante **avec recherche** (accents et majuscules ignorés, flèches du clavier). L'administrateur la renseigne à la création du compte (case « fiche sans compte de connexion » pour un médecin qui n'utilisera pas l'application) et peut la modifier ensuite ; un médecin peut aussi tenir sa propre fiche depuis « Mon profil ».
+
+**Prendre rendez-vous (patient)** : menu **Rendez-vous**.
+1. *Le médecin est dans la base* : recherche par nom ou spécialité, fiche affichée (nom, spécialités, téléphone, adresse professionnelle), « Choisir ce médecin », date et heure, motif. Une case facultative permet d'**autoriser ce médecin à consulter le dossier** ; sans elle, il ne voit pas les documents.
+2. *Le médecin n'y est pas* : « Ajouter un médecin absent de la liste » (nom, prénom, téléphone, spécialité, adresse). **Avant toute création, l'application vérifie les doublons** : même téléphone (quel que soit le format, `+33 6…` ou `06…`) → création refusée et fiche existante proposée ; même nom et prénom (ordre indifférent) → alerte « homonyme », création possible seulement après confirmation. Si le médecin est vraiment absent, sa **fiche est créée automatiquement** (sans compte de connexion), **associée au patient** (« Mes médecins ») et au rendez-vous, en une seule opération protégée contre les créations simultanées.
+
+Un rendez-vous a un statut : *en attente*, *confirmé*, *refusé*, *annulé*. Le médecin confirme ou refuse ; le patient annule les siens ; l'administrateur voit tout. Si le médecin n'a pas de compte, le patient est invité à le contacter par téléphone.
+
+**« Mes médecins »** (page *Mon dossier* du patient) affiche pour chaque médecin associé : nom complet, spécialités, **téléphone bien visible (appel en un clic)** et adresse professionnelle (lien carte), avec « Prendre rendez-vous » et « Retirer ». Toutes ces informations sont **relues dans la fiche en base à chaque affichage** : modifier une fiche la met à jour partout, sans ressaisie. Côté administrateur, choisir un médecin à attribuer à un patient affiche d'abord sa fiche complète.
+
+---
+
 ## Comptes de démonstration
+
+> Les comptes ci-dessous ne sont **plus affichés sur l'écran de connexion** du site : la page ne propose que le formulaire normal. Ils servent uniquement aux essais, en local ou juste après une installation neuve.
 
 Mot de passe **commun** à tous les comptes : `MmadiDemo2026!`
 
@@ -63,7 +86,7 @@ Mot de passe **commun** à tous les comptes : `MmadiDemo2026!`
 | Patient | `patient@mmadisante.demo` | Amina Mmadi |
 | Patient | `patient2@mmadisante.demo` | Paul Durand — **non suivi** par le médecin démo (pour constater le blocage d'accès) |
 
-> ⚠ Ces identifiants sont publics. Sur un site accessible depuis Internet, supprimez-les dès la démonstration terminée (voir [après le déploiement](#6-sécuriser-après-la-démonstration)).
+> ⚠ Ces identifiants sont publics (écrits dans ce fichier). Sur un site accessible depuis Internet, supprimez-les : voir [Supprimer les comptes de démonstration](#6-sécuriser-après-la-démonstration).
 
 ---
 
@@ -230,12 +253,18 @@ Cliquez ensuite sur **Apply** (5 à 10 minutes pour le premier déploiement). Au
 #### 5. Vérifier
 
 1. Ouvrez `https://<votre-api>.onrender.com/api/v1/sante` → vous devez voir `{"statut":"ok","baseDeDonnees":"ok"}`.
-2. Ouvrez `https://<votre-site>.onrender.com`, connectez-vous avec un compte de démonstration.
+2. Ouvrez `https://<votre-site>.onrender.com` et connectez-vous (compte de démonstration si vous les avez créés, sinon votre compte administrateur).
 
 #### 6. Sécuriser après la démonstration
 
-1. Connectez-vous en administrateur, créez votre propre compte administrateur, puis **supprimez les comptes `@mmadisante.demo`**.
-2. Dans Render, service `mmadi-sante-web`, passez `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` à `false` et relancez un déploiement (le site affiche sinon les comptes de démo sur la page de connexion).
+Le site n'affiche plus les comptes de démonstration, mais **ils existent toujours dans la base** avec un mot de passe public. Pour les retirer, **dans cet ordre** :
+
+1. Connectez-vous avec `admin@mmadisante.demo`, menu *Utilisateurs* → « + Nouvel utilisateur » → profil **Administrateur** : créez **votre propre** compte administrateur, puis vérifiez que vous pouvez vous connecter avec.
+2. Supprimez les 4 comptes de démonstration, au choix :
+   - **SQL (le plus simple)** : collez `database/supprimer_comptes_demo.sql` dans l'éditeur SQL de Supabase. L'étape 1 du script montre ce qui sera supprimé, l'étape 2 supprime.
+   - **ou en ligne de commande** : `cd backend`, puis `npm run supprimer-demo` (aperçu, ne supprime rien), puis `npm run supprimer-demo -- --oui`.
+
+Les deux méthodes reconnaissent les comptes par leur **adresse e-mail exacte** (`admin@`, `medecin@`, `patient@`, `patient2@` + `mmadisante.demo`), refusent de s'exécuter s'il ne reste aucun autre administrateur, et ne touchent à **aucun autre compte**. Les documents et rendez-vous de ces 4 comptes sont supprimés avec eux.
 
 ### Plans gratuits : ce qu'il faut savoir
 
@@ -246,6 +275,18 @@ Cliquez ensuite sur **Apply** (5 à 10 minutes pour le premier déploiement). Au
 ### Autre hébergeur (Railway, etc.)
 
 Aucun fichier de configuration n'est fourni pour Railway. Le principe reste le même : un service Node pour `backend/` (build : `npm install && npx prisma generate`, démarrage : `npm start`), un hébergement statique pour le dossier `frontend/out` produit par `npm run build`, et les mêmes variables d'environnement (voir ci-dessous).
+
+---
+
+## Mettre à jour une application déjà en ligne
+
+1. Remplacez les fichiers du projet par ceux de la nouvelle version (**sans** écraser vos fichiers `.env`).
+2. Envoyez-les sur GitHub (`git add -A`, `git commit -m "Version 2"`, `git push origin main`) : Render redéploie l'API et le site automatiquement (`autoDeploy`).
+3. **La base de données se met à jour toute seule** au démarrage de l'API : création des tables `specialites`, `medecin_specialites` et `rendez_vous`, ajout des colonnes de la fiche médecin et de la liste des 59 spécialités. Cette mise à jour **n'efface et ne modifie aucune donnée existante** (comptes, documents, attributions) et peut être rejouée sans risque. Dans les logs de l'API, vous verrez soit `prisma migrate deploy` réussir, soit `Mise à jour de la base appliquée : 0003_specialites_rendez_vous`.
+4. Si les logs affichent « ERREUR pendant la mise à jour de la base », collez `database/mise_a_jour_v2.sql` dans l'éditeur SQL de Supabase (même effet, à la main), puis relancez le déploiement.
+5. Aucune variable d'environnement n'est à ajouter. Vous pouvez supprimer `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` du service `mmadi-sante-web` : elle n'est plus utilisée.
+
+> Si vous avez défini `SKIP_MIGRATE=true` sur l'API, retirez-le pour que la mise à jour s'applique.
 
 ---
 
@@ -266,7 +307,6 @@ Chaque variable est documentée en détail dans `backend/.env.example` et `front
 | `SKIP_MIGRATE` | API | `true` pour ne pas lancer les migrations au démarrage |
 | `PRISMA_ADAPTER_PG` | API | mode « sans binaire » (avancé, voir plus bas) |
 | `NEXT_PUBLIC_API_URL` | site | adresse de l'API **avec `/api/v1`** (figée au build) |
-| `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` | site | `true` affiche les comptes de démo sur la page de connexion |
 
 ---
 
@@ -300,8 +340,18 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `DELETE /documents/:id` | propriétaire, admin | supprimer un document |
 | `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche et documents d'un utilisateur |
 | `GET /medecin/patients` | médecin | **ses** patients attribués |
+| `GET /specialites` (`?toutes=true` : admin) | connecté | liste des spécialités actives |
+| `POST /specialites`, `PUT /specialites/:id` | admin | ajouter, modifier, désactiver / réactiver (`actif`) |
+| `GET /medecins?q=&specialiteId=&type=`, `GET /medecins/:id` | patient, admin | annuaire des médecins (jamais l'e-mail ni le hash) |
+| `POST /medecins/verifier` | patient, admin | un médecin existe-t-il déjà ? (téléphone, nom) |
+| `PUT /profil` (`adresseProfessionnelle`, `specialiteIds`) | **médecin** pour ces champs | tenir sa fiche professionnelle |
+| `GET /profil/medecins`, `DELETE /profil/medecins/:id` | patient | **mes** médecins (fiche complète) / retirer l'accès |
+| `GET /rendez-vous` | connecté | patient : les siens · médecin : ceux qui le concernent · admin : tous |
+| `POST /rendez-vous` | patient | `medecinId` **ou** `nouveauMedecin` (vérification anti-doublon + création) |
+| `PATCH /rendez-vous/:id/statut` | patient (annuler les siens), médecin (confirmer/refuser/annuler les siens), admin | changer le statut |
+| `PUT /admin/medecins/:id` | admin | modifier la fiche d'un médecin |
 | `GET /admin/statistiques`, `/admin/utilisateurs`, `/admin/documents`, `/admin/attributions` | admin | consultation globale |
-| `POST /admin/utilisateurs` | admin | créer un compte de n'importe quel profil |
+| `POST /admin/utilisateurs` | admin | créer un compte de n'importe quel profil (médecin : spécialités, adresse pro, option « sans compte ») |
 | `DELETE /admin/utilisateurs/:id` | admin | supprimer un utilisateur (et ses documents) |
 | `POST` / `DELETE /admin/attributions` | admin | attribuer / retirer un patient d'un médecin |
 
@@ -362,6 +412,9 @@ Sur le plan gratuit, l'API **dort** : patientez une minute (le site réessaie se
 
 **« Session invalide ou expirée »** : une connexion dure 8 h (`JWT_EXPIRES_IN`) ; reconnectez-vous.
 **« Fichier refusé »** : seuls les vrais PDF, JPG et PNG de 5 Mo maximum sont acceptés.
+**« Ce médecin existe déjà »** lors de la création d'un médecin absent : c'est le contrôle anti-doublon. Sélectionnez la fiche proposée ; si c'est un homonyme (même nom, autre téléphone), confirmez qu'il s'agit d'un autre médecin.
+**La liste déroulante des spécialités est vide** : l'administrateur a désactivé toutes les spécialités, ou la mise à jour de la base n'a pas été appliquée (voir [Mettre à jour](#mettre-à-jour-une-application-déjà-en-ligne)).
+**Un rendez-vous reste « en attente »** : le médecin doit le confirmer. S'il n'a pas de compte (fiche créée par un patient), c'est à l'administrateur de le confirmer après contact téléphonique.
 **Un médecin ne voit aucun patient** : c'est normal tant que l'administrateur ne lui en a pas attribué (fiche du patient → « Médecins attribués »).
 
 ---
@@ -369,6 +422,8 @@ Sur le plan gratuit, l'API **dort** : patientez une minute (le site réessaie se
 ## Limites et pistes d'amélioration
 
 - **Hébergement de données de santé (HDS)** : indispensable en France pour de vraies données de patients ; non couvert par Render/Supabase.
+- **Rendez-vous** : demandes à date et heure libres, sans agenda de disponibilités du médecin, sans rappel par e-mail ni SMS ; seuls les créneaux déjà **confirmés** bloquent un autre patient.
+- **Fiches créées par les patients** : n'importe quel patient peut ajouter un médecin absent de la base (limité à 15 créations par heure et par adresse IP). L'administrateur peut corriger ou supprimer ces fiches ; il n'y a pas de validation préalable.
 - **Pas de journal d'audit** des consultations (qui a lu quel dossier) : à ajouter avant un usage réel.
 - **Pas de réinitialisation de mot de passe par e-mail ni de vérification d'adresse e-mail.**
 - Le jeton de connexion est conservé dans le navigateur (`localStorage`) : simple, mais moins protégé qu'un cookie `HttpOnly` face à une faille XSS.

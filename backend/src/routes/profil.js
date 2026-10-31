@@ -8,7 +8,9 @@ const prisma = require('../lib/prisma');
 const { chiffrer } = require('../lib/chiffrement');
 const { ErreurHttp, asyncHandler } = require('../lib/erreurs');
 const { schemaMajProfil, schemaChangementMotDePasse, schemaDocument } = require('../lib/validation');
-const { utilisateurPublic, selectDocumentSansContenu } = require('../lib/serialiser');
+const { utilisateurPublic, medecinPublic, INCLURE_SPECIALITES, selectDocumentSansContenu } = require('../lib/serialiser');
+const { remplacerSpecialites } = require('../lib/medecins');
+const { idValide } = require('../lib/validation');
 const { fichierValide, nettoyerNomFichier } = require('../lib/fichiers');
 const { authentifier } = require('../middleware/auth');
 
@@ -38,7 +40,7 @@ function televerser(req, res, next) {
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const u = await prisma.utilisateur.findUnique({ where: { id: req.utilisateur.id } });
+    const u = await prisma.utilisateur.findUnique({ where: { id: req.utilisateur.id }, include: INCLURE_SPECIALITES });
     res.json({ utilisateur: utilisateurPublic(u) });
   })
 );
@@ -56,7 +58,17 @@ router.put(
     if (fournis.has('telephone')) data.telephone = d.telephone;
     if (fournis.has('carteIdentite')) data.carteIdentiteChiffree = chiffrer(d.carteIdentite);
 
-    const u = await prisma.utilisateur.update({ where: { id: req.utilisateur.id }, data });
+    // Adresse professionnelle et spécialités : uniquement pour un médecin, sur SA propre fiche.
+    const champsMedecin = fournis.has('adresseProfessionnelle') || fournis.has('specialiteIds');
+    if (champsMedecin && req.utilisateur.role !== 'MEDECIN') {
+      throw new ErreurHttp(403, "Accès refusé : ces informations concernent uniquement les médecins.");
+    }
+    if (fournis.has('adresseProfessionnelle')) data.adresseProfessionnelle = d.adresseProfessionnelle;
+
+    const u = await prisma.$transaction(async (tx) => {
+      if (fournis.has('specialiteIds')) await remplacerSpecialites(tx, req.utilisateur.id, d.specialiteIds || []);
+      return tx.utilisateur.update({ where: { id: req.utilisateur.id }, data, include: INCLURE_SPECIALITES });
+    });
     res.json({ utilisateur: utilisateurPublic(u) });
   })
 );
@@ -75,6 +87,33 @@ router.put(
       data: { motDePasseHash: await bcrypt.hash(d.nouveauMotDePasse, 12) },
     });
     res.json({ message: 'Mot de passe modifié.' });
+  })
+);
+
+// GET /api/v1/profil/medecins — MES médecins (patient) : fiche complète tirée de la base à chaque appel
+router.get(
+  '/medecins',
+  asyncHandler(async (req, res) => {
+    if (req.utilisateur.role !== 'PATIENT') throw new ErreurHttp(403, "Accès refusé : votre profil n'a pas le droit d'effectuer cette action.");
+    const attributions = await prisma.attribution.findMany({
+      where: { patientId: req.utilisateur.id },
+      include: { medecin: { include: INCLURE_SPECIALITES } },
+      orderBy: { creeLe: 'desc' },
+    });
+    res.json({ medecins: attributions.map((a) => ({ attributionId: a.id, attribueLe: a.creeLe, ...medecinPublic(a.medecin) })) });
+  })
+);
+
+// DELETE /api/v1/profil/medecins/:medecinId — le patient retire un médecin de SES médecins
+// (le médecin perd alors l'accès à son dossier ; ses rendez-vous restent dans l'historique).
+router.delete(
+  '/medecins/:medecinId',
+  asyncHandler(async (req, res) => {
+    if (req.utilisateur.role !== 'PATIENT') throw new ErreurHttp(403, "Accès refusé : votre profil n'a pas le droit d'effectuer cette action.");
+    const medecinId = idValide(req.params.medecinId);
+    const { count } = await prisma.attribution.deleteMany({ where: { patientId: req.utilisateur.id, medecinId } });
+    if (count === 0) throw new ErreurHttp(404, 'Ce médecin ne figure pas dans vos médecins.');
+    res.json({ message: 'Médecin retiré.' });
   })
 );
 

@@ -6,7 +6,7 @@ const prisma = require('../lib/prisma');
 const { chiffrer } = require('../lib/chiffrement');
 const { ErreurHttp, asyncHandler } = require('../lib/erreurs');
 const { schemaInscription, schemaConnexion } = require('../lib/validation');
-const { utilisateurPublic } = require('../lib/serialiser');
+const { utilisateurPublic, INCLURE_SPECIALITES } = require('../lib/serialiser');
 const { signerJeton, authentifier } = require('../middleware/auth');
 
 const router = express.Router();
@@ -54,9 +54,10 @@ router.post(
   limiteur,
   asyncHandler(async (req, res) => {
     const d = schemaConnexion.parse(req.body);
-    const utilisateur = await prisma.utilisateur.findUnique({ where: { email: d.email } });
+    const utilisateur = await prisma.utilisateur.findUnique({ where: { email: d.email }, include: INCLURE_SPECIALITES });
     const ok = await bcrypt.compare(d.motDePasse, utilisateur ? utilisateur.motDePasseHash : HASH_FACTICE);
-    if (!utilisateur || !ok) throw new ErreurHttp(401, 'E-mail ou mot de passe incorrect.');
+    // Une fiche médecin « sans compte » n'a jamais le droit de se connecter.
+    if (!utilisateur || utilisateur.sansCompte || !ok) throw new ErreurHttp(401, 'E-mail ou mot de passe incorrect.');
     res.json({ jeton: signerJeton(utilisateur), utilisateur: utilisateurPublic(utilisateur) });
   })
 );
@@ -66,7 +67,7 @@ router.get(
   '/moi',
   authentifier,
   asyncHandler(async (req, res) => {
-    const utilisateur = await prisma.utilisateur.findUnique({ where: { id: req.utilisateur.id } });
+    const utilisateur = await prisma.utilisateur.findUnique({ where: { id: req.utilisateur.id }, include: INCLURE_SPECIALITES });
     res.json({ utilisateur: utilisateurPublic(utilisateur) });
   })
 );

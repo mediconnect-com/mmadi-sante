@@ -7,6 +7,7 @@ import Protege from '@/components/Protege';
 import FormulaireProfil from '@/components/FormulaireProfil';
 import TeleversementDocuments from '@/components/TeleversementDocuments';
 import ListeDocuments from '@/components/ListeDocuments';
+import MesMedecins from '@/components/MesMedecins';
 import { Alerte, Bouton, Carte, Champ, Chargement, Page } from '@/components/ui';
 
 function ChangerMotDePasse() {
@@ -69,6 +70,8 @@ function Contenu() {
   // Le formulaire est « re-monté » quand les données changent, pour afficher les valeurs enregistrées.
   return (
     <Page titre="Mon dossier" sousTitre="Vos informations personnelles et vos documents médicaux.">
+      {utilisateur.role === 'PATIENT' && <MesMedecins />}
+
       <Carte titre="Mes informations">
         <FormulaireProfil key={utilisateur.modifieLe} utilisateur={utilisateur} surMaj={setUtilisateur} />
       </Carte>

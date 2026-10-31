@@ -1,7 +1,7 @@
 -- ============================================================================
 --  MmadiSanté — Comptes de DÉMONSTRATION (SQL pur, alternative à « npm run seed »)
 -- ============================================================================
---  À coller dans l'éditeur SQL de l'hébergeur APRÈS database/schema.sql.
+--  À coller dans l'éditeur SQL de l'hébergeur APRÈS database/schema.sql (qui contient aussi la liste des spécialités).
 --  Mot de passe COMMUN à tous les comptes : MmadiDemo2026!
 --
 --     ADMIN    admin@mmadisante.demo
@@ -13,8 +13,9 @@
 --  Différence avec « npm run seed » : ici le numéro de carte d'identité est vide, car le chiffrement
 --  se fait dans l'API avec votre ENCRYPTION_KEY (le patient peut le saisir depuis son profil).
 --
---  ⚠ SÉCURITÉ : ces comptes et ce mot de passe sont PUBLICS. Supprimez-les (via le compte
---    administrateur) avant toute utilisation réelle.
+--  ⚠ SÉCURITÉ : ces comptes et ce mot de passe sont PUBLICS (ils ne sont plus affichés sur l'écran de
+--    connexion du site). Supprimez-les avant toute utilisation réelle :  database/supprimer_comptes_demo.sql
+--    ou « npm run supprimer-demo » (dans le dossier backend).
 -- ============================================================================
 
 INSERT INTO "utilisateurs" ("email", "mot_de_passe_hash", "role", "nom", "prenom", "adresse", "telephone")
@@ -39,3 +40,15 @@ FROM "utilisateurs" p, "utilisateurs" m
 WHERE p."email" = 'patient@mmadisante.demo'
   AND m."email" = 'medecin@mmadisante.demo'
 ON CONFLICT ("patient_id", "medecin_id") DO NOTHING;
+
+-- Fiche professionnelle du médecin démo : adresse du cabinet et spécialité « Médecine générale ».
+UPDATE "utilisateurs"
+SET "adresse_professionnelle" = 'Cabinet médical, 12 avenue de la Santé, 69003 Lyon'
+WHERE "email" = 'medecin@mmadisante.demo';
+
+INSERT INTO "medecin_specialites" ("medecin_id", "specialite_id")
+SELECT m."id", s."id"
+FROM "utilisateurs" m, "specialites" s
+WHERE m."email" = 'medecin@mmadisante.demo'
+  AND s."libelle" = 'Médecine générale'
+ON CONFLICT DO NOTHING;
