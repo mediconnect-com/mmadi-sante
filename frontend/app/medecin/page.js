@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { appelApi } from '@/lib/api';
-import { formaterDate, formaterDateHeure, formaterDepuis, normaliser, STATUTS_RDV } from '@/lib/constantes';
+import { formaterDate, formaterDateHeure, normaliser, STATUTS_RDV } from '@/lib/constantes';
 import Protege from '@/components/Protege';
 import { Alerte, Carte, Champ, Chargement, Page, Selecteur } from '@/components/ui';
 
 const TRIS = [
   { valeur: 'nom', libelle: 'Nom (A → Z)' },
-  { valeur: 'depot', libelle: 'Dernier document déposé' },
   { valeur: 'rdv', libelle: 'Prochain rendez-vous' },
+  { valeur: 'dernier', libelle: 'Dernier rendez-vous (le plus récent)' },
   { valeur: 'attribution', libelle: 'Récemment attribués' },
 ];
 
@@ -22,7 +22,7 @@ function Initiales({ p }) {
   );
 }
 
-function LignePatient({ p, joursRecent }) {
+function LignePatient({ p }) {
   const fiche = `/medecin/patient/?id=${p.id}`;
   const rdv = p.prochainRendezVous;
   return (
@@ -39,21 +39,20 @@ function LignePatient({ p, joursRecent }) {
               {p.telephone ? ` · ${p.telephone}` : ''}
             </span>
             <span className="mt-2 flex flex-wrap gap-1.5 text-xs">
-              {p.nombreDocumentsRecents > 0 && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800">
-                  {p.nombreDocumentsRecents} document{p.nombreDocumentsRecents > 1 ? 's' : ''} récent{p.nombreDocumentsRecents > 1 ? 's' : ''}
-                </span>
-              )}
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">
-                {p.nombreDocuments} document{p.nombreDocuments > 1 ? 's' : ''}
-                {p.dernierDocumentLe ? ` · dernier ${formaterDepuis(p.dernierDocumentLe)}` : ''}
-              </span>
-              {rdv && (
+              {rdv ? (
                 <span className={`rounded-full px-2 py-0.5 font-medium ${STATUTS_RDV[rdv.statut]?.style || 'bg-slate-100 text-slate-700'}`}>
-                  RDV {formaterDateHeure(rdv.dateHeure)}
+                  Prochain RDV : {formaterDateHeure(rdv.dateHeure)}
                   {rdv.statut === 'DEMANDE' ? ' (à confirmer)' : ''}
                 </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">Aucun rendez-vous à venir</span>
               )}
+              {p.dernierRendezVous && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">Dernier RDV : {formaterDate(p.dernierRendezVous.dateHeure)}</span>
+              )}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">
+                {p.nombreRendezVous} rendez-vous
+              </span>
               {p.nombreCommentaires > 0 && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900">
                   {p.nombreCommentaires} commentaire{p.nombreCommentaires > 1 ? 's' : ''}
@@ -66,15 +65,22 @@ function LignePatient({ p, joursRecent }) {
           <Link href={fiche} className="rounded-lg bg-marque-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-marque-700">
             Ouvrir la fiche
           </Link>
-          <Link href={`${fiche}#documents`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Documents
-          </Link>
+          {rdv && (
+            <Link href={`/rendez-vous/detail/?id=${rdv.id}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Prochain rendez-vous
+            </Link>
+          )}
+          {p.dernierRendezVous && (
+            <Link href={`/rendez-vous/detail/?id=${p.dernierRendezVous.id}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Dernier rendez-vous
+            </Link>
+          )}
           <Link href={`${fiche}#commentaires`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
             Commentaires
           </Link>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-400">Attribué le {formaterDate(p.attribueLe)} · récent = déposé il y a moins de {joursRecent} jours</p>
+      <p className="mt-2 text-xs text-slate-400">Attribué le {formaterDate(p.attribueLe)}</p>
     </li>
   );
 }
@@ -84,7 +90,7 @@ function Contenu() {
   const [erreur, setErreur] = useState('');
   const [recherche, setRecherche] = useState('');
   const [tri, setTri] = useState('nom');
-  const [seulementRecents, setSeulementRecents] = useState(false);
+  const [seulementRdv, setSeulementRdv] = useState(false);
 
   useEffect(() => {
     appelApi('/medecin/patients')
@@ -97,7 +103,7 @@ function Contenu() {
     if (!patients) return [];
     const termes = normaliser(recherche).split(' ').filter(Boolean);
     const filtres = patients.filter((p) => {
-      if (seulementRecents && p.nombreDocumentsRecents === 0) return false;
+      if (seulementRdv && !p.prochainRendezVous) return false;
       if (termes.length === 0) return true;
       const texte = normaliser([p.nom, p.prenom, p.email, p.telephone].join(' '));
       return termes.every((t) => texte.includes(t));
@@ -105,14 +111,14 @@ function Contenu() {
     const date = (v) => (v ? new Date(v).getTime() : 0);
     const comparateurs = {
       nom: (a, b) => a.nom.localeCompare(b.nom, 'fr') || a.prenom.localeCompare(b.prenom, 'fr'),
-      depot: (a, b) => date(b.dernierDocumentLe) - date(a.dernierDocumentLe),
+      dernier: (a, b) => date(b.dernierRendezVous?.dateHeure) - date(a.dernierRendezVous?.dateHeure),
       rdv: (a, b) => (a.prochainRendezVous ? date(a.prochainRendezVous.dateHeure) : Infinity) - (b.prochainRendezVous ? date(b.prochainRendezVous.dateHeure) : Infinity),
       attribution: (a, b) => date(b.attribueLe) - date(a.attribueLe),
     };
     return filtres.sort(comparateurs[tri]);
-  }, [patients, recherche, tri, seulementRecents]);
+  }, [patients, recherche, tri, seulementRdv]);
 
-  const nbRecents = patients ? patients.filter((p) => p.nombreDocumentsRecents > 0).length : 0;
+  const nbAvecRdv = patients ? patients.filter((p) => p.prochainRendezVous).length : 0;
 
   return (
     <Page titre="Mes patients" sousTitre="Les patients qui vous ont été attribués par l'administrateur. Cliquez sur un patient pour ouvrir sa fiche.">
@@ -131,8 +137,8 @@ function Contenu() {
               <Selecteur label="Trier par" valeur={tri} onChange={setTri} options={TRIS} />
             </div>
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={seulementRecents} onChange={(e) => setSeulementRecents(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-marque-600" />
-              Seulement les patients avec des documents récents ({nbRecents})
+              <input type="checkbox" checked={seulementRdv} onChange={(e) => setSeulementRdv(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-marque-600" />
+              Seulement les patients avec un rendez-vous à venir ({nbAvecRdv})
             </label>
           </Carte>
           <p className="text-sm text-slate-600" role="status">
@@ -145,7 +151,7 @@ function Contenu() {
           ) : (
             <ul className="space-y-3">
               {visibles.map((p) => (
-                <LignePatient key={p.id} p={p} joursRecent={reponse.joursRecent} />
+                <LignePatient key={p.id} p={p} />
               ))}
             </ul>
           )}

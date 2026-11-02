@@ -26,4 +26,19 @@ async function exigerAccesUtilisateur(acteur, cibleId) {
   }
 }
 
-module.exports = { peutConsulterUtilisateur, exigerAccesUtilisateur };
+/**
+ * DOCUMENTS (V3) : seuls le PROPRIÉTAIRE (le patient) et l'ADMINISTRATEUR peuvent ouvrir un document.
+ * Un médecin n'a accès à AUCUN document d'un patient : ni ceux que le patient a déposés lui-même, ni ceux
+ * qu'un médecin (même lui) a déposés dans la fiche. Il peut en déposer, pas en lire.
+ */
+function peutConsulterDocument(acteur, proprietaireId) {
+  return acteur.role === 'ADMIN' || acteur.id === proprietaireId;
+}
+
+function exigerAccesDocument(acteur, proprietaireId) {
+  if (!peutConsulterDocument(acteur, proprietaireId)) {
+    throw new ErreurHttp(403, "Accès refusé : les documents d'un patient ne sont accessibles qu'à lui-même et à l'administrateur.");
+  }
+}
+
+module.exports = { peutConsulterUtilisateur, exigerAccesUtilisateur, peutConsulterDocument, exigerAccesDocument };

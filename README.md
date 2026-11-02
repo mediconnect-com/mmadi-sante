@@ -7,10 +7,10 @@ Application web pour saisir et consulter des informations de santé : **nom, pr�
 | Profil | Ce qu'il peut faire |
 |---|---|
 | **PATIENT** | Créer son compte, saisir et modifier **ses** informations, envoyer et supprimer **ses** documents, retrouver **ses médecins** (nom, spécialité, téléphone, adresse), **rechercher un médecin** et **prendre rendez-vous**. Ne voit jamais les données d'un autre. |
-| **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations et documents des patients **qui lui sont attribués**, et seulement ceux-là. |
+| **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations des patients **qui lui sont attribués** (jamais leurs documents), rédiger un commentaire de pathologies à l'issue d'un rendez-vous et déposer des documents dans leur fiche. |
 | **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes et fiches médecins de tout profil, gérer la liste des **spécialités**, attribuer les patients aux médecins. |
 
-Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 82 tests automatisés.
+Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 87 tests automatisés.
 
 **Technologies** : Node.js + Express + Prisma (API) · Next.js + React + Tailwind (site, export statique) · PostgreSQL · interface et commentaires en français.
 
@@ -39,7 +39,7 @@ mmadi-sante/
 ├── backend/                 API Express + Prisma (routes sous /api/v1)
 │   ├── src/                 code : routes, middleware d'accès, chiffrement, validation
 │   ├── prisma/              schema.prisma, migrations/, seed.js
-│   ├── tests/               82 tests automatisés (npm test)
+│   ├── tests/               87 tests automatisés (npm test)
 │   └── .env.example         variables d'environnement documentées
 ├── frontend/                site Next.js + Tailwind (responsive mobile/tablette)
 │   └── .env.example
@@ -61,13 +61,15 @@ mmadi-sante/
 
 | Évolution | Où la trouver |
 |---|---|
-| **Mes patients** (médecin) : recherche, tri, badges (documents récents, prochain rendez-vous, commentaires), clic sur toute la ligne pour ouvrir la fiche, liens directs « Documents » et « Commentaires » | menu *Mes patients* |
-| **Documents datés, récents / historique** : chaque document affiche sa date de dépôt, « il y a N jours » et qui l'a déposé ; les documents de moins de **30 jours** sont regroupés sous *Récents*, les autres sous *Historique* | fiche d'un patient (médecin, administrateur) et *Mon dossier* du patient |
+| **Mes patients** (médecin) : recherche, tri, prochain et dernier rendez-vous, nombre de commentaires, clic sur toute la ligne pour ouvrir la fiche, liens directs vers les rendez-vous et les commentaires (aucune information sur les documents) | menu *Mes patients* |
+| **Documents datés, récents / historique** : chaque document affiche sa date de dépôt, « il y a N jours » et qui l'a déposé ; les documents de moins de **30 jours** sont regroupés sous *Récents*, les autres sous *Historique* | fiche d'un patient (**administrateur**) et *Mon dossier* du patient (le médecin n'y a pas accès) |
 | **Choisir un médecin par spécialité** : filtre « spécialité » (avec l'effectif de chaque spécialité) avant la liste des médecins à attribuer | fiche d'un patient, côté administrateur (*Médecins attribués*) |
 | **Mon profil en lecture** : les informations s'affichent en lecture ; « Modifier mes informations » ouvre le formulaire ; « Enregistrer » ou « Annuler » ramène à la lecture. Le numéro de carte d'identité est masqué en lecture | *Mon profil* / *Mon dossier* (tous les profils) |
-| **Commentaires et pathologies** : un médecin saisit, modifie et supprime ses commentaires sur ses patients ; le patient les lit dans *Mon dossier* ; l'administrateur les voit dans la fiche du patient ; **un confrère ne les voit pas** | fiche d'un patient (médecin) · *Mon dossier* (patient) |
-| **Dépôt de documents par le médecin** dans la fiche de ses patients (mêmes contrôles que pour un patient : PDF, JPG, PNG) ; le patient les voit avec la date et le nom du médecin | fiche d'un patient (médecin) |
+| **Commentaires et pathologies, liés à un rendez-vous** : un médecin ne peut commenter qu'un **rendez-vous avec son patient, confirmé et déjà commencé**, un seul commentaire par rendez-vous (modifiable, supprimable par son auteur). Le patient les lit dans *Mon dossier* avec le rendez-vous concerné ; l'administrateur les voit ; **un confrère ne les voit pas** | fiche du patient et détail du rendez-vous (médecin) · *Mon dossier* (patient) |
+| **Dépôt de documents par le médecin** dans la fiche de ses patients (PDF, JPG, PNG). Le patient les voit avec la date et le nom du médecin. **Le médecin ne peut ensuite ni les rouvrir ni voir les documents du patient** : il garde seulement un accusé de dépôt (nom, date, sans contenu) | fiche du patient (médecin) · *Mon dossier* (patient) |
 | **Administrateur : accès par clic à tous les rendez-vous** : la tuile *Rendez-vous* de l'accueil administrateur ouvre la liste, et « Ouvrir » affiche le détail d'un rendez-vous (patient, médecin, statut, actions, liens vers les fiches). Disponible aussi pour le patient et le médecin concernés | accueil administrateur · *Rendez-vous* |
+
+**Confidentialité des documents (V3).** Les documents d'un patient (déposés par lui ou par un médecin) ne sont accessibles qu'au **patient** et à l'**administrateur** ; l'API répond 403 à un médecin, même attribué, même pour son propre dépôt.
 
 **Règles de suppression des documents (V3).** Un document déposé **par le patient** : supprimable par lui et par l'administrateur. Un document déposé **par un médecin** dans la fiche du patient : supprimable par ce médecin et par l'administrateur, **pas par le patient** (il fait partie du dossier médical). Si le médecin est supprimé, ses documents et commentaires restent, avec son nom.
 
@@ -355,13 +357,14 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `GET` / `PUT /profil` | connecté | lire / modifier **ses** informations |
 | `PUT /profil/mot-de-passe` | connecté | changer son mot de passe |
 | `GET` / `POST /profil/documents` | connecté | lister / envoyer **ses** documents (champ `fichiers`, 5 max) |
-| `GET /documents/:id` | propriétaire, médecin attribué, admin | télécharger un document |
+| `GET /documents/:id` | propriétaire, admin (jamais un médecin) | télécharger un document |
 | `DELETE /documents/:id` | propriétaire (documents qu'il a déposés), médecin dépositaire, admin | supprimer un document |
 | `POST /utilisateurs/:id/documents` | **médecin attribué** | déposer un ou plusieurs documents dans la fiche d'un patient (V3) |
-| `POST /commentaires`, `PUT` / `DELETE /commentaires/:id` | **médecin** (auteur, patient attribué) | commentaires et pathologies d'un patient (V3) |
+| `POST /commentaires` (`rendezVousId`), `PUT` / `DELETE /commentaires/:id` | **médecin** (auteur du rendez-vous) | commentaire de pathologies lié à un rendez-vous confirmé et commencé (V3) |
+| `GET /rendez-vous/:id` | patient / médecin concernés, admin | détail d'un rendez-vous (V3) |
 | `GET /profil/commentaires` | patient | lire les commentaires de **ses** médecins (V3) |
-| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche, documents et (patient) commentaires visibles par le demandeur |
-| `GET /medecin/patients` | médecin | **ses** patients attribués, avec documents (récents), dernier dépôt, prochain rendez-vous, commentaires (V3) |
+| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche ; documents (patient, admin) ou accusés de dépôt (médecin) ; commentaires visibles par le demandeur |
+| `GET /medecin/patients` | médecin | **ses** patients attribués, avec prochain/dernier rendez-vous et nombre de commentaires (V3) |
 | `GET /specialites` (`?toutes=true` : admin) | connecté | liste des spécialités actives |
 | `POST /specialites`, `PUT /specialites/:id` | admin | ajouter, modifier, désactiver / réactiver (`actif`) |
 | `GET /medecins?q=&specialiteId=&type=`, `GET /medecins/:id` | patient, admin | annuaire des médecins (jamais l'e-mail ni le hash) |

@@ -131,7 +131,7 @@ const corpsCommentaire = {
 const auMoinsUnChamp = (d) => Boolean(d.pathologies || d.commentaire);
 const MESSAGE_CHAMP_VIDE = 'Renseignez au moins les pathologies ou un commentaire.';
 const schemaCommentaire = z
-  .object({ patientId: z.string().uuid('Identifiant patient invalide.'), ...corpsCommentaire })
+  .object({ rendezVousId: z.string({ required_error: 'Choisissez le rendez-vous concerné.' }).uuid('Identifiant de rendez-vous invalide.'), ...corpsCommentaire })
   .refine(auMoinsUnChamp, { message: MESSAGE_CHAMP_VIDE });
 const schemaMajCommentaire = z.object(corpsCommentaire).refine(auMoinsUnChamp, { message: MESSAGE_CHAMP_VIDE });
 

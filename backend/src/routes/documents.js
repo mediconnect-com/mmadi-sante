@@ -3,20 +3,20 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { asyncHandler, ErreurHttp } = require('../lib/erreurs');
 const { idValide } = require('../lib/validation');
-const { exigerAccesUtilisateur } = require('../lib/acces');
+const { exigerAccesDocument } = require('../lib/acces');
 const { authentifier } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authentifier);
 
-// GET /api/v1/documents/:id — contenu du fichier (propriétaire, médecin attribué ou admin)
+// GET /api/v1/documents/:id — contenu du fichier (propriétaire ou admin ; JAMAIS un médecin, V3)
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = idValide(req.params.id);
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) throw new ErreurHttp(404, 'Document introuvable.');
-    await exigerAccesUtilisateur(req.utilisateur, doc.proprietaireId);
+    exigerAccesDocument(req.utilisateur, doc.proprietaireId);
 
     const contenu = Buffer.from(doc.contenu);
     res.setHeader('Content-Type', doc.typeMime);

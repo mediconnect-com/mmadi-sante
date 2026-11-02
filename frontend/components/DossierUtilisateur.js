@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { appelApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { formaterDate } from '@/lib/constantes';
+import { CATEGORIES, formaterDate, formaterDepuis } from '@/lib/constantes';
 import { Alerte, BadgeRole, Bouton, Carte, Champ, Chargement, Page, Selecteur } from './ui';
 import ListeDocuments from './ListeDocuments';
 import CarteMedecin from './CarteMedecin';
@@ -276,6 +276,16 @@ export default function DossierUtilisateur({ id, admin = false }) {
     if (cible) cible.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [donnees]);
 
+  async function retirerDocument(d) {
+    if (!window.confirm(`Retirer « ${d.nomFichier} » de la fiche du patient ?`)) return;
+    try {
+      await appelApi(`/documents/${d.id}`, { methode: 'DELETE' });
+      await charger();
+    } catch (e) {
+      setErreur(e.message);
+    }
+  }
+
   async function supprimerUtilisateur() {
     const u = donnees.utilisateur;
     if (!window.confirm(`Supprimer définitivement le compte de ${u.prenom} ${u.nom}, ainsi que tous ses documents ?`)) return;
@@ -336,24 +346,54 @@ export default function DossierUtilisateur({ id, admin = false }) {
         </dl>
       </Carte>
 
-      <div id="documents" className="scroll-mt-20">
-        <Carte titre={`Documents (${donnees.documents.length})`}>
-          <ListeDocuments
-            documents={donnees.documents}
-            grouper={u.role === 'PATIENT'}
-            // Administrateur : tout ; médecin : uniquement les documents qu'il a lui-même déposés (le serveur revérifie).
-            peutSupprimer={(d) => admin || (moi?.role === 'MEDECIN' && d.deposeParMedecinId === moi.id)}
-            surSuppression={charger}
-            vide="Aucun document enregistré par cet utilisateur."
-          />
-        </Carte>
-      </div>
+      {/* Documents : l'administrateur (et le patient lui-même, dans « Mon dossier ») les voient ; un médecin JAMAIS. */}
+      {donnees.documents && (
+        <div id="documents" className="scroll-mt-20">
+          <Carte titre={`Documents (${donnees.documents.length})`}>
+            <ListeDocuments
+              documents={donnees.documents}
+              grouper={u.role === 'PATIENT'}
+              peutSupprimer={admin}
+              surSuppression={charger}
+              vide="Aucun document enregistré par cet utilisateur."
+            />
+          </Carte>
+        </div>
+      )}
 
       {!admin && moi?.role === 'MEDECIN' && u.role === 'PATIENT' && (
-        <Carte titre="Déposer un document dans la fiche de ce patient">
-          <p className="mb-3 text-sm text-slate-600">Le document sera visible par le patient dans son dossier, avec la date de dépôt et votre nom.</p>
-          <TeleversementDocuments chemin={`/utilisateurs/${u.id}/documents`} surTermine={charger} />
-        </Carte>
+        <>
+          <Carte titre="Déposer un document dans la fiche de ce patient">
+            <p className="mb-3 text-sm text-slate-600">
+              Le document sera visible par le patient dans son dossier, avec la date de dépôt et votre nom. <strong>Vous ne pourrez pas le rouvrir ensuite</strong> : les documents d&apos;un patient ne sont accessibles qu&apos;à lui-même et à l&apos;administrateur.
+            </p>
+            <TeleversementDocuments chemin={`/utilisateurs/${u.id}/documents`} surTermine={charger} />
+          </Carte>
+          <div id="documents">
+            <Carte titre={`Documents que vous avez transmis (${(donnees.documentsTransmis || []).length})`}>
+              {(donnees.documentsTransmis || []).length === 0 ? (
+                <p className="text-sm text-slate-500">Vous n&apos;avez transmis aucun document à ce patient.</p>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {donnees.documentsTransmis.map((d) => (
+                    <li key={d.id} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-slate-800">{d.nomFichier}</span>
+                        <span className="block text-xs text-slate-500">
+                          {CATEGORIES[d.categorie] || d.categorie} · transmis le {formaterDate(d.creeLe)} ({formaterDepuis(d.creeLe)})
+                        </span>
+                      </span>
+                      <Bouton variante="secondaire" onClick={() => retirerDocument(d)}>
+                        Retirer
+                      </Bouton>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-3 text-xs text-slate-500">Accusé de dépôt uniquement : le contenu des documents n&apos;est pas accessible aux médecins.</p>
+            </Carte>
+          </div>
+        </>
       )}
 
       {u.role === 'PATIENT' && (admin || moi?.role === 'MEDECIN') && (
@@ -361,7 +401,7 @@ export default function DossierUtilisateur({ id, admin = false }) {
           <Carte titre={admin ? `Commentaires et pathologies rédigés par les médecins (${(donnees.commentaires || []).length})` : 'Commentaires et pathologies'}>
             <CommentairesPatient
               commentaires={donnees.commentaires || []}
-              patientId={u.id}
+              rendezVousCommentables={donnees.rendezVousCommentables || []}
               mode={admin ? 'lecture' : 'medecin'}
               surChangement={charger}
               vide={admin ? 'Aucun médecin n’a encore saisi de commentaire sur ce patient.' : 'Vous n’avez pas encore saisi de commentaire sur ce patient.'}

@@ -163,6 +163,8 @@ model RendezVous {
 
   patient Utilisateur @relation("RdvPatient", fields: [patientId], references: [id], onDelete: Cascade)
   medecin Utilisateur @relation("RdvMedecin", fields: [medecinId], references: [id], onDelete: Cascade)
+  /// Commentaire et pathologies rédigés par le médecin à propos de ce rendez-vous (au plus un).
+  commentaire CommentairePatient?
 
   @@index([patientId])
   @@index([medecinId, dateHeure])
@@ -176,6 +178,8 @@ model CommentairePatient {
   /// Médecin auteur (null si sa fiche a été supprimée : son nom est conservé dans medecinNom).
   medecinId  String?  @map("medecin_id") @db.Uuid
   medecinNom String   @map("medecin_nom")
+  /// Rendez-vous à propos duquel le commentaire est rédigé (un seul commentaire par rendez-vous).
+  rendezVousId String? @unique @map("rendez_vous_id") @db.Uuid
   pathologies String?
   commentaire String?
   creeLe     DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
@@ -183,6 +187,7 @@ model CommentairePatient {
 
   patient Utilisateur  @relation("CommentairePatient", fields: [patientId], references: [id], onDelete: Cascade)
   medecin Utilisateur? @relation("CommentaireMedecin", fields: [medecinId], references: [id], onDelete: SetNull)
+  rendezVous RendezVous? @relation(fields: [rendezVousId], references: [id], onDelete: SetNull)
 
   @@index([patientId, creeLe])
   @@index([medecinId])

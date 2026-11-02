@@ -1,5 +1,6 @@
-// V3 — Commentaires et pathologies d'un patient, rédigés par un de ses médecins.
-//   MEDECIN : crée un commentaire sur un patient QUI LUI EST ATTRIBUÉ, modifie / supprime SES commentaires
+// V3 — Commentaires et pathologies d'un patient, rédigés par son médecin À PROPOS D'UN RENDEZ-VOUS.
+//   MEDECIN : crée un commentaire sur un rendez-vous QUI LE CONCERNE (confirmé et déjà commencé), un seul par rendez-vous ;
+//             modifie / supprime SES commentaires
 //   PATIENT : lit tous les commentaires qui le concernent (GET /profil/commentaires), sans pouvoir les modifier
 //   ADMIN   : les voit dans la fiche du patient (GET /utilisateurs/:id)
 // Un médecin ne voit jamais les commentaires d'un confrère.
@@ -13,25 +14,29 @@ const { authentifier, exigerRole } = require('../middleware/auth');
 const router = express.Router();
 router.use(authentifier, exigerRole('MEDECIN'));
 
-// POST /api/v1/commentaires { patientId, pathologies, commentaire }
+const AVEC_RDV = { rendezVous: { select: { id: true, dateHeure: true } } };
+
+// POST /api/v1/commentaires { rendezVousId, pathologies, commentaire }
 router.post(
   '/',
   asyncHandler(async (req, res) => {
     const d = schemaCommentaire.parse(req.body);
-    const attribution = await prisma.attribution.findUnique({
-      where: { patientId_medecinId: { patientId: d.patientId, medecinId: req.utilisateur.id } },
-      select: { id: true },
-    });
-    if (!attribution) throw new ErreurHttp(403, 'Accès refusé : ce patient ne figure pas parmi vos patients.');
+    const rdv = await prisma.rendezVous.findUnique({ where: { id: d.rendezVousId }, include: { commentaire: { select: { id: true } } } });
+    if (!rdv || rdv.medecinId !== req.utilisateur.id) throw new ErreurHttp(403, 'Accès refusé : ce rendez-vous ne vous concerne pas.');
+    if (rdv.statut !== 'CONFIRME') throw new ErreurHttp(409, 'Un commentaire se rédige à propos d\'un rendez-vous confirmé (ni en attente, ni refusé, ni annulé).');
+    if (rdv.dateHeure.getTime() > Date.now()) throw new ErreurHttp(409, 'Ce rendez-vous n\'a pas encore eu lieu : vous pourrez le commenter à partir de son heure.');
+    if (rdv.commentaire) throw new ErreurHttp(409, 'Ce rendez-vous a déjà un commentaire : modifiez-le.');
     const medecin = await prisma.utilisateur.findUnique({ where: { id: req.utilisateur.id }, select: { nom: true, prenom: true } });
     const c = await prisma.commentairePatient.create({
       data: {
-        patientId: d.patientId,
+        patientId: rdv.patientId,
         medecinId: req.utilisateur.id,
         medecinNom: `${medecin.prenom} ${medecin.nom}`,
+        rendezVousId: rdv.id,
         pathologies: d.pathologies,
         commentaire: d.commentaire,
       },
+      include: AVEC_RDV,
     });
     res.status(201).json({ commentaire: commentairePublic(c) });
   })
@@ -52,7 +57,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const c = await commentaireDuMedecin(req);
     const d = schemaMajCommentaire.parse(req.body);
-    const maj = await prisma.commentairePatient.update({ where: { id: c.id }, data: { pathologies: d.pathologies, commentaire: d.commentaire } });
+    const maj = await prisma.commentairePatient.update({ where: { id: c.id }, data: { pathologies: d.pathologies, commentaire: d.commentaire }, include: AVEC_RDV });
     res.json({ commentaire: commentairePublic(maj) });
   })
 );

@@ -1,5 +1,5 @@
-// Tests d'intégration de la V3 : commentaires et pathologies, documents déposés par un médecin,
-// liste « Mes patients » enrichie, détail d'un rendez-vous, statistiques administrateur.
+// Tests d'intégration de la V3 : documents déposés par un médecin (qu'il ne peut jamais relire), commentaires et
+// pathologies liés à un rendez-vous, liste « Mes patients » enrichie, détail d'un rendez-vous, statistiques administrateur.
 // Même principe que les autres fichiers : vraie base PostgreSQL (DATABASE_URL), comptes « test-… » créés puis supprimés.
 //   Lancer :  npm test
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'secret-de-test-0123456789-0123456789-0123456789';
@@ -71,6 +71,21 @@ async function creerMedecin(nom) {
   return { ...(await connecter(email)), email };
 }
 
+/** Rendez-vous confirmé et DÉJÀ PASSÉ entre un patient et un médecin (le serveur refuse de créer un rendez-vous dans le passé :
+ *  on le crée à venir, le médecin le confirme, puis on recule sa date directement en base). */
+let compteurRdv = 0;
+async function rdvPasse(patient, medecin, { statut = 'CONFIRME', passe = true } = {}) {
+  compteurRdv += 1;
+  const quand = new Date(Date.now() + (40 + compteurRdv) * 86400000);
+  quand.setUTCHours(8, compteurRdv, 0, 0);
+  const r = await appel('POST', '/rendez-vous', { jeton: patient.jeton, json: { medecinId: medecin.id, dateHeure: quand.toISOString(), motif: `Test V3 ${compteurRdv}` } });
+  assert.equal(r.statut, 201, JSON.stringify(r.donnees));
+  const id = r.donnees.rendezVous.id;
+  if (statut !== 'DEMANDE') assert.equal((await appel('PATCH', `/rendez-vous/${id}/statut`, { jeton: medecin.jeton, json: { statut } })).statut, 200);
+  if (passe) await prisma.rendezVous.update({ where: { id }, data: { dateHeure: new Date(Date.now() - compteurRdv * 3600000) } });
+  return id;
+}
+
 const attribuer = (patientId, medecinId) => appel('POST', '/admin/attributions', { jeton: J.admin.jeton, json: { patientId, medecinId } });
 
 before(async () => {
@@ -95,7 +110,7 @@ after(async () => {
   await new Promise((ok) => serveur.close(ok));
 });
 
-describe('V3 — le médecin dépose des documents dans la fiche de SES patients', () => {
+describe('V3 — le médecin dépose des documents dans la fiche de SES patients, sans pouvoir les relire', () => {
   it('un médecin dépose un document dans la fiche d\'un patient qui lui est attribué ; il est marqué comme déposé par lui', async () => {
     const r = await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.medecinDemo.jeton, form: formulaire('resultat.pdf', 'ANALYSE') });
     assert.equal(r.statut, 201, JSON.stringify(r.donnees));
@@ -106,12 +121,14 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
     J.docMedecin = doc;
   });
 
-  it('le patient voit ce document dans « Mon dossier », avec le nom du médecin qui l\'a déposé', async () => {
+  it('le patient voit ce document dans « Mon dossier », avec le nom du médecin qui l\'a déposé, et peut l\'ouvrir', async () => {
     const r = await appel('GET', '/profil/documents', { jeton: J.patientV3.jeton });
     assert.equal(r.statut, 200);
     const d = r.donnees.documents.find((x) => x.id === J.docMedecin.id);
     assert.ok(d);
     assert.match(d.deposeParNom, /Claire Martin/);
+    const res = await fetch(`${base}/documents/${J.docMedecin.id}`, { headers: { Authorization: `Bearer ${J.patientV3.jeton}` } });
+    assert.equal(res.status, 200);
   });
 
   it('un document déposé par le patient lui-même n\'est pas marqué comme déposé par un médecin', async () => {
@@ -122,34 +139,65 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
     J.docPatient = r.donnees.documents[0];
   });
 
-  it('refus (403) : médecin non attribué, patient, administrateur', async () => {
+  it('refus (403) du dépôt : médecin non attribué, patient, administrateur ; 401 sans jeton', async () => {
     const autre = await creerMedecin('Etranger');
     assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: autre.jeton, form: formulaire() })).statut, 403);
     assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.patientV3.jeton, form: formulaire() })).statut, 403);
     assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.admin.jeton, form: formulaire() })).statut, 403);
     assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { form: formulaire() })).statut, 401);
-    // Paul n'est pas attribué au médecin démo
     assert.equal((await appel('POST', `/utilisateurs/${J.paul.id}/documents`, { jeton: J.medecinDemo.jeton, form: formulaire() })).statut, 403);
   });
 
   it('mêmes contrôles de fichier que pour le patient (faux PDF refusé)', async () => {
     const form = new FormData();
     form.append('fichiers', new Blob([Buffer.from('pas un pdf')], { type: 'application/pdf' }), 'faux.pdf');
-    const r = await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.medecinDemo.jeton, form });
-    assert.equal(r.statut, 400);
+    assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.medecinDemo.jeton, form })).statut, 400);
   });
 
-  it('l\'autre médecin du patient peut lire le document (accès v2 conservé)', async () => {
-    const res = await fetch(`${base}/documents/${J.docMedecin.id}`, { headers: { Authorization: `Bearer ${J.confrere.jeton}` } });
+  it('AUCUN médecin ne peut ouvrir un document du patient : ni celui du patient, ni celui qu\'il a lui-même déposé, ni celui d\'un confrère', async () => {
+    for (const [medecin, doc] of [
+      [J.medecinDemo, J.docPatient], // document déposé par le patient
+      [J.medecinDemo, J.docMedecin], // document déposé par ce même médecin
+      [J.confrere, J.docPatient],
+      [J.confrere, J.docMedecin], // document déposé par un confrère
+    ]) {
+      const res = await fetch(`${base}/documents/${doc.id}`, { headers: { Authorization: `Bearer ${medecin.jeton}` } });
+      assert.equal(res.status, 403, `${medecin.email || 'médecin'} → ${doc.nomFichier}`);
+    }
+  });
+
+  it('la fiche du patient ne renvoie aucun document au médecin ; seulement l\'accusé de SES dépôts (nom, type, date)', async () => {
+    const r = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.medecinDemo.jeton });
+    assert.equal(r.statut, 200);
+    assert.equal(r.donnees.documents, undefined);
+    assert.equal(r.donnees.documentsTransmis.length, 1);
+    assert.equal(r.donnees.documentsTransmis[0].id, J.docMedecin.id);
+    assert.equal(r.donnees.documentsTransmis[0].contenu, undefined);
+    const confrere = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.confrere.jeton });
+    assert.deepEqual(confrere.donnees.documentsTransmis, [], 'le confrère n\'a rien déposé : aucun accusé, et le document du patient reste invisible');
+    assert.equal(confrere.donnees.documents, undefined);
+  });
+
+  it('« Mes patients » et les autres listes ne laissent rien deviner des documents du patient', async () => {
+    const r = await appel('GET', '/medecin/patients', { jeton: J.medecinDemo.jeton });
+    const p = r.donnees.patients.find((x) => x.id === J.patientV3.id);
+    assert.ok(p);
+    for (const champ of ['nombreDocuments', 'nombreDocumentsRecents', 'dernierDocumentLe']) assert.equal(p[champ], undefined, champ);
+  });
+
+  it('l\'administrateur voit les documents du patient (liste et contenu) ; le patient aussi', async () => {
+    const fiche = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.admin.jeton });
+    assert.ok(fiche.donnees.documents.some((d) => d.id === J.docPatient.id));
+    const res = await fetch(`${base}/documents/${J.docPatient.id}`, { headers: { Authorization: `Bearer ${J.admin.jeton}` } });
     assert.equal(res.status, 200);
   });
 
-  it('suppression : le patient ne peut pas supprimer un document déposé par un médecin ; un confrère non plus', async () => {
+  it('suppression : le patient ne supprime pas un document déposé par un médecin ; un confrère non plus', async () => {
     assert.equal((await appel('DELETE', `/documents/${J.docMedecin.id}`, { jeton: J.patientV3.jeton })).statut, 403);
     assert.equal((await appel('DELETE', `/documents/${J.docMedecin.id}`, { jeton: J.confrere.jeton })).statut, 403);
   });
 
-  it('suppression : le patient supprime SES documents ; le médecin dépositaire supprime le sien', async () => {
+  it('suppression : le patient supprime SES documents ; le médecin dépositaire retire le sien (sans l\'avoir relu)', async () => {
     assert.equal((await appel('DELETE', `/documents/${J.docPatient.id}`, { jeton: J.patientV3.jeton })).statut, 200);
     assert.equal((await appel('DELETE', `/documents/${J.docMedecin.id}`, { jeton: J.medecinDemo.jeton })).statut, 200);
   });
@@ -175,66 +223,118 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
   });
 });
 
-describe('V3 — commentaires et pathologies rédigés par un médecin', () => {
-  it('un médecin crée un commentaire sur un patient qui lui est attribué', async () => {
+describe('V3 — un commentaire se rédige À PROPOS D\'UN RENDEZ-VOUS entre le patient et son médecin', () => {
+  it('le médecin commente un rendez-vous confirmé et passé qui le concerne', async () => {
+    J.rdv1 = await rdvPasse(J.patientV3, J.medecinDemo);
     const r = await appel('POST', '/commentaires', {
       jeton: J.medecinDemo.jeton,
-      json: { patientId: J.patientV3.id, pathologies: 'Hypertension artérielle', commentaire: 'Tension à surveiller chaque semaine.' },
+      json: { rendezVousId: J.rdv1, pathologies: 'Hypertension artérielle', commentaire: 'Tension à surveiller chaque semaine.' },
     });
     assert.equal(r.statut, 201, JSON.stringify(r.donnees));
-    assert.equal(r.donnees.commentaire.pathologies, 'Hypertension artérielle');
+    assert.equal(r.donnees.commentaire.rendezVousId, J.rdv1);
+    assert.ok(r.donnees.commentaire.rendezVousDateHeure);
+    assert.equal(r.donnees.commentaire.patientId, J.patientV3.id, 'le patient est celui du rendez-vous, pas une valeur envoyée');
     assert.match(r.donnees.commentaire.medecinNom, /Claire Martin/);
     J.commentaire = r.donnees.commentaire;
   });
 
-  it('validation : au moins un champ, textes limités', async () => {
-    const vide = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: J.patientV3.id, pathologies: '  ', commentaire: '' } });
+  it('refus : sans rendez-vous (400), rendez-vous d\'un autre médecin ou inconnu (403), un seul commentaire par rendez-vous (409)', async () => {
+    const sans = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: J.patientV3.id, commentaire: 'sans rendez-vous' } });
+    assert.equal(sans.statut, 400);
+    assert.match(sans.donnees.erreur, /rendez-vous/i);
+    const chezConfrere = await rdvPasse(J.patientV3, J.confrere);
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: chezConfrere, commentaire: 'pas le mien' } })).statut, 403);
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: '00000000-0000-4000-8000-000000000000', commentaire: 'x' } })).statut, 403);
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: 'pas-un-uuid', commentaire: 'x' } })).statut, 400);
+    const doublon = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: J.rdv1, commentaire: 'second' } });
+    assert.equal(doublon.statut, 409);
+  });
+
+  it('refus : rendez-vous en attente, refusé, annulé ou pas encore commencé (409)', async () => {
+    const attente = await rdvPasse(J.patientV3, J.medecinDemo, { statut: 'DEMANDE', passe: false });
+    const futur = await rdvPasse(J.patientV3, J.medecinDemo, { passe: false });
+    const annule = await rdvPasse(J.patientV3, J.medecinDemo);
+    await appel('PATCH', `/rendez-vous/${annule}/statut`, { jeton: J.medecinDemo.jeton, json: { statut: 'ANNULE' } });
+    const refuse = await rdvPasse(J.patientV3, J.medecinDemo, { statut: 'DEMANDE' });
+    await appel('PATCH', `/rendez-vous/${refuse}/statut`, { jeton: J.medecinDemo.jeton, json: { statut: 'REFUSE' } });
+    for (const id of [attente, futur, annule, refuse]) {
+      const r = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: id, commentaire: 'trop tôt ou sans objet' } });
+      assert.equal(r.statut, 409, id);
+    }
+  });
+
+  it('validation : au moins un champ renseigné, textes limités', async () => {
+    const rdv = await rdvPasse(J.patientV3, J.medecinDemo);
+    const vide = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: rdv, pathologies: '  ', commentaire: '' } });
     assert.equal(vide.statut, 400);
     assert.match(vide.donnees.erreur, /au moins/);
-    const long = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: J.patientV3.id, commentaire: 'x'.repeat(3001) } });
-    assert.equal(long.statut, 400);
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: 'pas-un-uuid', commentaire: 'x' } })).statut, 400);
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: rdv, commentaire: 'x'.repeat(3001) } })).statut, 400);
   });
 
-  it('refus (403) : médecin non attribué ; patient ; administrateur ; sans jeton (401)', async () => {
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: J.paul.id, commentaire: 'x' } })).statut, 403);
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.patientV3.jeton, json: { patientId: J.patientV3.id, commentaire: 'x' } })).statut, 403);
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.admin.jeton, json: { patientId: J.patientV3.id, commentaire: 'x' } })).statut, 403);
-    assert.equal((await appel('POST', '/commentaires', { json: { patientId: J.patientV3.id, commentaire: 'x' } })).statut, 401);
+  it('refus (403) : patient et administrateur ne rédigent pas de commentaire ; 401 sans jeton', async () => {
+    const json = { rendezVousId: J.rdv1, commentaire: 'x' };
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.patientV3.jeton, json })).statut, 403);
+    assert.equal((await appel('POST', '/commentaires', { jeton: J.admin.jeton, json })).statut, 403);
+    assert.equal((await appel('POST', '/commentaires', { json })).statut, 401);
   });
 
-  it('le patient lit ses commentaires (« Mon dossier »), sans pouvoir les modifier', async () => {
+  it('le rendez-vous suffit : le médecin peut commenter même si le patient ne lui a pas donné accès à sa fiche', async () => {
+    const seul = await creerPatient('sansattribution');
+    const rdv = await rdvPasse(seul, J.medecinDemo);
+    assert.equal((await appel('GET', `/utilisateurs/${seul.id}`, { jeton: J.medecinDemo.jeton })).statut, 403, 'pas d\'accès à la fiche');
+    const r = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: rdv, commentaire: 'Consultation de contrôle.' } });
+    assert.equal(r.statut, 201);
+    const vu = await appel('GET', '/profil/commentaires', { jeton: seul.jeton });
+    assert.equal(vu.donnees.commentaires.length, 1);
+  });
+
+  it('le patient lit ses commentaires (« Mon dossier »), avec le rendez-vous concerné, sans pouvoir les modifier', async () => {
     const r = await appel('GET', '/profil/commentaires', { jeton: J.patientV3.jeton });
     assert.equal(r.statut, 200);
     assert.equal(r.donnees.commentaires.length, 1);
+    assert.equal(r.donnees.commentaires[0].rendezVousId, J.rdv1);
     assert.equal((await appel('PUT', `/commentaires/${J.commentaire.id}`, { jeton: J.patientV3.jeton, json: { commentaire: 'Je modifie' } })).statut, 403);
     assert.equal((await appel('DELETE', `/commentaires/${J.commentaire.id}`, { jeton: J.patientV3.jeton })).statut, 403);
   });
 
-  it('un autre patient ne voit pas les commentaires de ce patient ; seul un patient peut appeler cette route', async () => {
-    const r = await appel('GET', '/profil/commentaires', { jeton: J.paul.jeton });
-    assert.equal(r.donnees.commentaires.length, 0);
+  it('un autre patient ne voit pas ces commentaires ; seul un patient peut appeler cette route', async () => {
+    assert.equal((await appel('GET', '/profil/commentaires', { jeton: J.paul.jeton })).donnees.commentaires.length, 0);
     assert.equal((await appel('GET', '/profil/commentaires', { jeton: J.medecinDemo.jeton })).statut, 403);
   });
 
-  it('l\'auteur voit ses commentaires dans la fiche du patient ; un confrère ne les voit pas ; l\'administrateur voit tout', async () => {
+  it('l\'auteur voit ses commentaires dans la fiche ; un confrère ne les voit pas ; l\'administrateur voit tout', async () => {
     const auteur = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.medecinDemo.jeton });
     assert.equal(auteur.donnees.commentaires.length, 1);
     const confrere = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.confrere.jeton });
     assert.equal(confrere.statut, 200, 'l\'accès à la fiche reste celui de la v2');
-    assert.equal(confrere.donnees.commentaires.length, 0, 'mais pas aux commentaires d\'un confrère');
+    assert.equal(confrere.donnees.commentaires.length, 0);
     const admin = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.admin.jeton });
     assert.equal(admin.donnees.commentaires.length, 1);
   });
 
-  it('le confrère rédige son propre commentaire ; le patient voit les deux, chacun avec son auteur', async () => {
-    const r = await appel('POST', '/commentaires', { jeton: J.confrere.jeton, json: { patientId: J.patientV3.id, pathologies: 'Arythmie', commentaire: 'Holter prescrit.' } });
-    assert.equal(r.statut, 201);
-    const vu = await appel('GET', '/profil/commentaires', { jeton: J.patientV3.jeton });
-    assert.equal(vu.donnees.commentaires.length, 2);
-    assert.deepEqual(vu.donnees.commentaires.map((c) => c.medecinNom).sort().length, 2);
-    const admin = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.admin.jeton });
-    assert.equal(admin.donnees.commentaires.length, 2);
+  it('la fiche liste les rendez-vous encore commentables (confirmés, passés, sans commentaire), pas celui déjà commenté', async () => {
+    const r = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.medecinDemo.jeton });
+    const ids = r.donnees.rendezVousCommentables.map((x) => x.id);
+    assert.ok(ids.length >= 1, 'les rendez-vous créés plus haut');
+    assert.ok(!ids.includes(J.rdv1), 'déjà commenté');
+    assert.equal(r.donnees.rendezVousCommentables.every((x) => new Date(x.dateHeure) <= new Date()), true);
+    const confrere = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.confrere.jeton });
+    assert.ok(confrere.donnees.rendezVousCommentables.length >= 1, 'le confrère a le sien (rendez-vous « chez le confrère »)');
+    assert.equal(confrere.donnees.rendezVousCommentables.some((x) => ids.includes(x.id)), false);
+  });
+
+  it('le détail d\'un rendez-vous donne le commentaire au patient, au médecin et à l\'administrateur ; propose de commenter au médecin', async () => {
+    for (const jeton of [J.patientV3.jeton, J.medecinDemo.jeton, J.admin.jeton]) {
+      const r = await appel('GET', `/rendez-vous/${J.rdv1}`, { jeton });
+      assert.equal(r.statut, 200);
+      assert.equal(r.donnees.rendezVous.commentaire.id, J.commentaire.id);
+    }
+    const libre = await rdvPasse(J.patientV3, J.medecinDemo);
+    const m = await appel('GET', `/rendez-vous/${libre}`, { jeton: J.medecinDemo.jeton });
+    assert.equal(m.donnees.rendezVous.commentaire, null);
+    assert.equal(m.donnees.rendezVous.peutCommenter, true);
+    assert.equal((await appel('GET', `/rendez-vous/${J.rdv1}`, { jeton: J.medecinDemo.jeton })).donnees.rendezVous.peutCommenter, false);
+    assert.equal((await appel('GET', `/rendez-vous/${libre}`, { jeton: J.patientV3.jeton })).donnees.rendezVous.peutCommenter, undefined);
   });
 
   it('seul l\'auteur modifie ou supprime son commentaire', async () => {
@@ -243,22 +343,22 @@ describe('V3 — commentaires et pathologies rédigés par un médecin', () => {
     const maj = await appel('PUT', `/commentaires/${J.commentaire.id}`, { jeton: J.medecinDemo.jeton, json: { pathologies: 'Hypertension artérielle', commentaire: 'Tension stabilisée.' } });
     assert.equal(maj.statut, 200);
     assert.equal(maj.donnees.commentaire.commentaire, 'Tension stabilisée.');
+    assert.equal(maj.donnees.commentaire.rendezVousId, J.rdv1, 'le rendez-vous ne change pas');
     assert.equal((await appel('PUT', `/commentaires/${J.commentaire.id}`, { jeton: J.medecinDemo.jeton, json: {} })).statut, 400);
     assert.equal((await appel('PUT', '/commentaires/00000000-0000-4000-8000-000000000000', { jeton: J.medecinDemo.jeton, json: { commentaire: 'x' } })).statut, 404);
   });
 
-  it('si l\'attribution est retirée, le médecin ne peut plus commenter ce patient', async () => {
-    const autre = await creerPatient('retire');
-    const a = await attribuer(autre.id, J.medecinDemo.id);
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: autre.id, commentaire: 'ok' } })).statut, 201);
-    await appel('DELETE', `/admin/attributions/${a.donnees.attribution.id}`, { jeton: J.admin.jeton });
-    assert.equal((await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: autre.id, commentaire: 'refus' } })).statut, 403);
+  it('supprimer un commentaire libère le rendez-vous pour un nouveau commentaire', async () => {
+    assert.equal((await appel('DELETE', `/commentaires/${J.commentaire.id}`, { jeton: J.medecinDemo.jeton })).statut, 200);
+    const r = await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: J.rdv1, commentaire: 'Nouveau commentaire' } });
+    assert.equal(r.statut, 201);
+    J.commentaire = r.donnees.commentaire;
   });
 
   it('le commentaire est conservé avec le nom du médecin si sa fiche est supprimée', async () => {
     const eph = await creerMedecin('Disparu');
-    await attribuer(J.patientV3.id, eph.id);
-    await appel('POST', '/commentaires', { jeton: eph.jeton, json: { patientId: J.patientV3.id, commentaire: 'Note du médecin supprimé' } });
+    const rdv = await rdvPasse(J.patientV3, eph);
+    await appel('POST', '/commentaires', { jeton: eph.jeton, json: { rendezVousId: rdv, commentaire: 'Note du médecin supprimé' } });
     await appel('DELETE', `/admin/utilisateurs/${eph.id}`, { jeton: J.admin.jeton });
     const vu = await appel('GET', '/profil/commentaires', { jeton: J.patientV3.jeton });
     const c = vu.donnees.commentaires.find((x) => x.commentaire === 'Note du médecin supprimé');
@@ -266,51 +366,32 @@ describe('V3 — commentaires et pathologies rédigés par un médecin', () => {
     assert.equal(c.medecinId, null);
     assert.match(c.medecinNom, /Disparu/);
   });
-
-  it('l\'auteur supprime son commentaire', async () => {
-    assert.equal((await appel('DELETE', `/commentaires/${J.commentaire.id}`, { jeton: J.medecinDemo.jeton })).statut, 200);
-  });
 });
 
 describe('V3 — « Mes patients » : liste enrichie pour retrouver vite une fiche', () => {
-  it('chaque patient indique documents, documents récents, dernier dépôt, prochain rendez-vous et commentaires', async () => {
-    const cardio = (await prisma.specialite.findUnique({ where: { libelle: 'Cardiologie' } })).id;
-    assert.ok(cardio);
-    await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.medecinDemo.jeton, form: formulaire('liste.pdf') });
-    await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: J.patientV3.id, commentaire: 'Pour la liste' } });
+  it('chaque patient indique rendez-vous à venir, dernier rendez-vous, nombre de rendez-vous et commentaires', async () => {
     const quand = new Date(Date.now() + 5 * 86400000);
     quand.setUTCHours(10, 7, 0, 0);
     const rdv = await appel('POST', '/rendez-vous', { jeton: J.patientV3.jeton, json: { medecinId: J.medecinDemo.id, dateHeure: quand.toISOString(), motif: 'Suivi' } });
     assert.equal(rdv.statut, 201, JSON.stringify(rdv.donnees));
-
     const r = await appel('GET', '/medecin/patients', { jeton: J.medecinDemo.jeton });
     assert.equal(r.statut, 200);
-    assert.equal(r.donnees.joursRecent, 30);
     const p = r.donnees.patients.find((x) => x.id === J.patientV3.id);
     assert.ok(p);
-    assert.ok(p.nombreDocuments >= 1);
-    assert.ok(p.nombreDocumentsRecents >= 1);
-    assert.ok(p.dernierDocumentLe);
     assert.equal(p.prochainRendezVous.id, rdv.donnees.rendezVous.id);
     assert.equal(p.prochainRendezVous.statut, 'DEMANDE');
+    assert.ok(p.dernierRendezVous, 'un rendez-vous confirmé déjà passé');
+    assert.ok(p.nombreRendezVous >= 2);
     assert.equal(p.nombreCommentaires, 1);
     assert.equal(r.donnees.patients.some((x) => x.id === J.paul.id), false, 'Paul n\'est pas un patient du médecin démo');
   });
 
-  it('un document ancien (plus de 30 jours) compte dans le total mais pas dans les récents', async () => {
-    const doc = await prisma.document.findFirst({ where: { proprietaireId: J.patientV3.id } });
-    await prisma.document.update({ where: { id: doc.id }, data: { creeLe: new Date(Date.now() - 90 * 86400000) } });
-    const r = await appel('GET', '/medecin/patients', { jeton: J.medecinDemo.jeton });
-    const p = r.donnees.patients.find((x) => x.id === J.patientV3.id);
-    assert.ok(p.nombreDocuments > p.nombreDocumentsRecents);
-  });
-
-  it('un confrère ne voit que ses propres patients et ses propres commentaires dans la liste', async () => {
+  it('un confrère ne voit que ses propres rendez-vous et commentaires dans la liste', async () => {
     const r = await appel('GET', '/medecin/patients', { jeton: J.confrere.jeton });
     const p = r.donnees.patients.find((x) => x.id === J.patientV3.id);
     assert.ok(p);
-    assert.equal(p.nombreCommentaires, 1, 'seulement le sien (Arythmie)');
-    assert.equal(p.prochainRendezVous, null, 'le rendez-vous est chez l\'autre médecin');
+    assert.equal(p.nombreCommentaires, 0);
+    assert.equal(p.prochainRendezVous, null, 'le rendez-vous à venir est chez l\'autre médecin');
   });
 
   it('réservé aux médecins', async () => {
@@ -322,17 +403,14 @@ describe('V3 — « Mes patients » : liste enrichie pour retrouver vite une fic
 describe('V3 — détail d\'un rendez-vous et statistiques administrateur', () => {
   it('l\'administrateur ouvre n\'importe quel rendez-vous ; patient et médecin concernés aussi', async () => {
     const liste = await appel('GET', '/rendez-vous', { jeton: J.admin.jeton });
-    const rdv = liste.donnees.rendezVous.find((r) => r.patient.id === J.patientV3.id);
+    const rdv = liste.donnees.rendezVous.find((r) => r.patient.id === J.patientV3.id && r.medecin.id === J.medecinDemo.id);
     assert.ok(rdv);
     const admin = await appel('GET', `/rendez-vous/${rdv.id}`, { jeton: J.admin.jeton });
     assert.equal(admin.statut, 200);
     assert.equal(admin.donnees.rendezVous.patient.id, J.patientV3.id);
     assert.equal(admin.donnees.rendezVous.patient.email, J.patientV3.email);
     assert.equal(admin.donnees.rendezVous.dossierAccessible, true);
-    assert.equal(admin.donnees.rendezVous.medecin.id, J.medecinDemo.id);
-    const medecin = await appel('GET', `/rendez-vous/${rdv.id}`, { jeton: J.medecinDemo.jeton });
-    assert.equal(medecin.statut, 200);
-    assert.equal(medecin.donnees.rendezVous.dossierAccessible, true);
+    assert.equal((await appel('GET', `/rendez-vous/${rdv.id}`, { jeton: J.medecinDemo.jeton })).statut, 200);
     const patient = await appel('GET', `/rendez-vous/${rdv.id}`, { jeton: J.patientV3.jeton });
     assert.equal(patient.statut, 200);
     assert.equal(patient.donnees.rendezVous.patient, undefined, 'le patient n\'a pas besoin de ses propres coordonnées ici');
@@ -357,7 +435,8 @@ describe('V3 — détail d\'un rendez-vous et statistiques administrateur', () =
   it('la suppression d\'un patient supprime aussi ses commentaires et documents (cascade)', async () => {
     const p = await creerPatient('cascade');
     await attribuer(p.id, J.medecinDemo.id);
-    await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { patientId: p.id, commentaire: 'x' } });
+    const rdv = await rdvPasse(p, J.medecinDemo);
+    await appel('POST', '/commentaires', { jeton: J.medecinDemo.jeton, json: { rendezVousId: rdv, commentaire: 'x' } });
     await appel('POST', `/utilisateurs/${p.id}/documents`, { jeton: J.medecinDemo.jeton, form: formulaire() });
     assert.equal((await appel('DELETE', `/admin/utilisateurs/${p.id}`, { jeton: J.admin.jeton })).statut, 200);
     assert.equal(await prisma.commentairePatient.count({ where: { patientId: p.id } }), 0);

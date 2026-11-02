@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 const prisma = require('../lib/prisma');
 const { ErreurHttp, asyncHandler } = require('../lib/erreurs');
 const { schemaRendezVous, schemaStatutRendezVous, idValide } = require('../lib/validation');
-const { medecinPublic, INCLURE_SPECIALITES } = require('../lib/serialiser');
+const { medecinPublic, commentairePublic, INCLURE_SPECIALITES } = require('../lib/serialiser');
 const { chercherDoublons, remplacerSpecialites } = require('../lib/medecins');
 const { authentifier, exigerRole } = require('../middleware/auth');
 
@@ -90,6 +90,11 @@ router.get(
     }
     const rep = rdvPublic(r, acteur, accessibles);
     rep.modifieLe = r.modifieLe;
+    // V3 : commentaire et pathologies rédigés à propos de ce rendez-vous (visibles par le patient, son auteur et l'administrateur).
+    const com = await prisma.commentairePatient.findUnique({ where: { rendezVousId: r.id }, include: { rendezVous: { select: { id: true, dateHeure: true } } } });
+    rep.commentaire = com ? commentairePublic(com) : null;
+    // Le médecin peut commenter un rendez-vous confirmé, déjà commencé, qui n'a pas encore de commentaire.
+    if (acteur.role === 'MEDECIN') rep.peutCommenter = !com && r.statut === 'CONFIRME' && r.dateHeure.getTime() <= Date.now();
     if (acteur.role === 'ADMIN') {
       const p = await prisma.utilisateur.findUnique({ where: { id: r.patientId }, select: { email: true } });
       rep.patient.email = p ? p.email : null;

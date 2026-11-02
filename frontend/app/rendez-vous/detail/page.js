@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { STATUTS_RDV, formaterDate, formaterDateHeure, nomComplet } from '@/lib/constantes';
 import Protege from '@/components/Protege';
 import CarteMedecin from '@/components/CarteMedecin';
+import CommentairesPatient from '@/components/CommentairesPatient';
 import { Alerte, Bouton, Carte, Chargement, Page } from '@/components/ui';
 
 function Info({ label, children }) {
@@ -116,6 +117,26 @@ function Contenu() {
           }
         />
       </Carte>
+
+      {/* V3 : commentaire et pathologies rédigés à propos de CE rendez-vous */}
+      {(rdv.commentaire || role === 'MEDECIN') && (
+        <Carte titre="Commentaire et pathologies">
+          {role === 'MEDECIN' && !rdv.commentaire && !rdv.peutCommenter && (
+            <p className="text-sm text-slate-600">
+              Vous pourrez rédiger un commentaire à partir de l&apos;heure du rendez-vous, s&apos;il est confirmé.
+            </p>
+          )}
+          {(role !== 'MEDECIN' || rdv.commentaire || rdv.peutCommenter) && (
+            <CommentairesPatient
+              commentaires={rdv.commentaire ? [rdv.commentaire] : []}
+              rendezVousFixe={role === 'MEDECIN' && rdv.peutCommenter ? rdv.id : undefined}
+              mode={role === 'MEDECIN' ? 'medecin' : 'lecture'}
+              surChangement={charger}
+              vide="Aucun commentaire pour ce rendez-vous."
+            />
+          )}
+        </Carte>
+      )}
 
       {(actif || ((role === 'MEDECIN' || role === 'ADMIN') && rdv.statut === 'DEMANDE')) && (
         <Carte titre="Actions">

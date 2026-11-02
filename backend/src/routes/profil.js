@@ -124,7 +124,11 @@ router.get(
   '/commentaires',
   asyncHandler(async (req, res) => {
     if (req.utilisateur.role !== 'PATIENT') throw new ErreurHttp(403, "Accès refusé : votre profil n'a pas le droit d'effectuer cette action.");
-    const lignes = await prisma.commentairePatient.findMany({ where: { patientId: req.utilisateur.id }, orderBy: { creeLe: 'desc' } });
+    const lignes = await prisma.commentairePatient.findMany({
+      where: { patientId: req.utilisateur.id },
+      include: { rendezVous: { select: { id: true, dateHeure: true } } },
+      orderBy: { creeLe: 'desc' },
+    });
     res.json({ commentaires: lignes.map(commentairePublic) });
   })
 );

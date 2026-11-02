@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS "commentaires_patients" (
     "patient_id" UUID NOT NULL,
     "medecin_id" UUID,
     "medecin_nom" TEXT NOT NULL,
+    -- Le commentaire est rédigé À PROPOS d'un rendez-vous entre ce patient et ce médecin (un seul par rendez-vous).
+    "rendez_vous_id" UUID,
     "pathologies" TEXT,
     "commentaire" TEXT,
     "cree_le" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -36,12 +38,20 @@ CREATE TABLE IF NOT EXISTS "commentaires_patients" (
     CONSTRAINT "commentaires_patients_pkey" PRIMARY KEY ("id")
 );
 
+-- Une base déjà passée par une version antérieure de cette migration (sans rendez-vous) reçoit aussi la colonne.
+ALTER TABLE "commentaires_patients" ADD COLUMN IF NOT EXISTS "rendez_vous_id" UUID;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commentaires_patients_patient_id_fkey') THEN
     ALTER TABLE "commentaires_patients"
       ADD CONSTRAINT "commentaires_patients_patient_id_fkey"
       FOREIGN KEY ("patient_id") REFERENCES "utilisateurs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commentaires_patients_rendez_vous_id_fkey') THEN
+    ALTER TABLE "commentaires_patients"
+      ADD CONSTRAINT "commentaires_patients_rendez_vous_id_fkey"
+      FOREIGN KEY ("rendez_vous_id") REFERENCES "rendez_vous"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commentaires_patients_medecin_id_fkey') THEN
     ALTER TABLE "commentaires_patients"
@@ -53,3 +63,4 @@ $$;
 
 CREATE INDEX IF NOT EXISTS "commentaires_patients_patient_id_cree_le_idx" ON "commentaires_patients"("patient_id", "cree_le");
 CREATE INDEX IF NOT EXISTS "commentaires_patients_medecin_id_idx" ON "commentaires_patients"("medecin_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "commentaires_patients_rendez_vous_id_key" ON "commentaires_patients"("rendez_vous_id");

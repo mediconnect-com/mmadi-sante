@@ -88,6 +88,8 @@ function commentairePublic(c) {
     patientId: c.patientId,
     medecinId: c.medecinId,
     medecinNom: c.medecinNom,
+    rendezVousId: c.rendezVousId,
+    rendezVousDateHeure: c.rendezVous ? c.rendezVous.dateHeure : null,
     pathologies: c.pathologies,
     commentaire: c.commentaire,
     creeLe: c.creeLe,

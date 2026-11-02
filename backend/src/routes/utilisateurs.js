@@ -19,30 +19,48 @@ router.get(
     const id = idValide(req.params.id);
     await exigerAccesUtilisateur(req.utilisateur, id);
 
+    const acteur = req.utilisateur;
     const u = await prisma.utilisateur.findUnique({
       where: { id },
       include: {
         ...INCLURE_SPECIALITES,
-        documents: { select: selectDocumentSansContenu, orderBy: { creeLe: 'desc' } },
+        // V3 : un médecin ne reçoit AUCUN document du patient. Il ne voit que ceux qu'il a lui-même déposés,
+        // sous forme d'accusé (nom, type, date), sans pouvoir les ouvrir.
+        documents: {
+          where: acteur.role === 'MEDECIN' ? { deposeParMedecinId: acteur.id } : undefined,
+          select: selectDocumentSansContenu,
+          orderBy: { creeLe: 'desc' },
+        },
         commePatient: { select: { id: true, medecin: { include: INCLURE_SPECIALITES } } },
         commeMedecin: { select: { id: true, patient: { select: { id: true, nom: true, prenom: true, email: true } } } },
       },
     });
     if (!u) throw new ErreurHttp(404, 'Utilisateur introuvable.');
 
-    const reponse = { utilisateur: utilisateurPublic(u), documents: u.documents };
-    // V3 : commentaires et pathologies d'un patient. Administrateur : tous ; patient : tous les siens ;
-    // médecin : uniquement CEUX QU'IL A LUI-MÊME rédigés (un confrère n'y a pas accès).
-    if (u.role === 'PATIENT') {
-      const where = { patientId: id };
-      if (req.utilisateur.role === 'MEDECIN') where.medecinId = req.utilisateur.id;
-      const lignes = await prisma.commentairePatient.findMany({ where, orderBy: { creeLe: 'desc' } });
-      reponse.commentaires = lignes.map(commentairePublic);
-    }
+    const reponse = { utilisateur: utilisateurPublic(u) };
+    if (acteur.role === 'MEDECIN') reponse.documentsTransmis = u.documents; // accusés de dépôt uniquement
+    else reponse.documents = u.documents;
     // Seul l'administrateur voit les attributions (médecins d'un patient / patients d'un médecin).
-    if (req.utilisateur.role === 'ADMIN') {
+    if (acteur.role === 'ADMIN') {
       reponse.medecins = u.commePatient.map((a) => ({ attributionId: a.id, ...medecinPublic(a.medecin) }));
       reponse.patients = u.commeMedecin.map((a) => ({ attributionId: a.id, ...a.patient }));
+    }
+    // V3 : commentaires et pathologies d'un patient, toujours liés à un rendez-vous.
+    // Administrateur : tous ; patient : tous les siens ; médecin : uniquement CEUX QU'IL A LUI-MÊME rédigés.
+    if (u.role === 'PATIENT') {
+      const where = { patientId: id };
+      if (acteur.role === 'MEDECIN') where.medecinId = acteur.id;
+      const lignes = await prisma.commentairePatient.findMany({ where, include: { rendezVous: { select: { id: true, dateHeure: true } } }, orderBy: { creeLe: 'desc' } });
+      reponse.commentaires = lignes.map(commentairePublic);
+      if (acteur.role === 'MEDECIN') {
+        // Rendez-vous de ce patient avec ce médecin sur lesquels il peut encore rédiger un commentaire.
+        const commentables = await prisma.rendezVous.findMany({
+          where: { patientId: id, medecinId: acteur.id, statut: 'CONFIRME', dateHeure: { lte: new Date() }, commentaire: null },
+          select: { id: true, dateHeure: true, motif: true },
+          orderBy: { dateHeure: 'desc' },
+        });
+        reponse.rendezVousCommentables = commentables;
+      }
     }
     res.json(reponse);
   })
