@@ -17,14 +17,15 @@ router.use(authentifier, exigerRole('ADMIN'));
 router.get(
   '/statistiques',
   asyncHandler(async (req, res) => {
-    const [patients, medecins, admins, documents, attributions] = await Promise.all([
+    const [patients, medecins, admins, documents, attributions, rendezVous] = await Promise.all([
       prisma.utilisateur.count({ where: { role: 'PATIENT' } }),
       prisma.utilisateur.count({ where: { role: 'MEDECIN' } }),
       prisma.utilisateur.count({ where: { role: 'ADMIN' } }),
       prisma.document.count(),
       prisma.attribution.count(),
+      prisma.rendezVous.count(),
     ]);
-    res.json({ patients, medecins, admins, documents, attributions });
+    res.json({ patients, medecins, admins, documents, attributions, rendezVous });
   })
 );
 

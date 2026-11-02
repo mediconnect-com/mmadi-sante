@@ -123,6 +123,18 @@ const schemaDocument = z.object({
   description: optionnel(300),
 });
 
+// --- Commentaires et pathologies saisis par un médecin (V3) ---
+const corpsCommentaire = {
+  pathologies: optionnel(1000),
+  commentaire: optionnel(3000),
+};
+const auMoinsUnChamp = (d) => Boolean(d.pathologies || d.commentaire);
+const MESSAGE_CHAMP_VIDE = 'Renseignez au moins les pathologies ou un commentaire.';
+const schemaCommentaire = z
+  .object({ patientId: z.string().uuid('Identifiant patient invalide.'), ...corpsCommentaire })
+  .refine(auMoinsUnChamp, { message: MESSAGE_CHAMP_VIDE });
+const schemaMajCommentaire = z.object(corpsCommentaire).refine(auMoinsUnChamp, { message: MESSAGE_CHAMP_VIDE });
+
 // --- Spécialités (administrateur) ---
 const schemaSpecialite = z.object({
   libelle: texteCourt('Le libellé', 120),
@@ -200,6 +212,8 @@ module.exports = {
   schemaChangementMotDePasse,
   schemaAttribution,
   schemaDocument,
+  schemaCommentaire,
+  schemaMajCommentaire,
   schemaSpecialite,
   schemaMajSpecialite,
   schemaMajMedecin,

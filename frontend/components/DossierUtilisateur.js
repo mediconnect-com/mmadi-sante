@@ -1,7 +1,7 @@
 'use client';
 // Fiche complète d'un utilisateur (informations + documents), en lecture pour le médecin,
 // avec gestion des attributions et suppression pour l'administrateur.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { appelApi } from '@/lib/api';
@@ -11,6 +11,8 @@ import { Alerte, BadgeRole, Bouton, Carte, Champ, Chargement, Page, Selecteur } 
 import ListeDocuments from './ListeDocuments';
 import CarteMedecin from './CarteMedecin';
 import SelecteurSpecialites from './SelecteurSpecialites';
+import TeleversementDocuments from './TeleversementDocuments';
+import CommentairesPatient from './CommentairesPatient';
 
 function Info({ label, valeur }) {
   return (
@@ -25,6 +27,8 @@ function Info({ label, valeur }) {
 function Attributions({ utilisateur, liee, surChangement }) {
   const estPatient = utilisateur.role === 'PATIENT';
   const [candidats, setCandidats] = useState([]);
+  const [specialites, setSpecialites] = useState([]);
+  const [filtreSpecialite, setFiltreSpecialite] = useState('');
   const [choix, setChoix] = useState('');
   const [erreur, setErreur] = useState('');
   const [enCours, setEnCours] = useState(false);
@@ -39,8 +43,28 @@ function Attributions({ utilisateur, liee, surChangement }) {
     };
   }, [estPatient]);
 
+  // V3 : pour attribuer un médecin à un patient, on peut d'abord choisir une spécialité.
+  useEffect(() => {
+    if (!estPatient) return undefined;
+    let actif = true;
+    appelApi('/specialites')
+      .then((r) => actif && setSpecialites(r.specialites))
+      .catch(() => {});
+    return () => {
+      actif = false;
+    };
+  }, [estPatient]);
+
   const dejaLies = new Set(liee.map((l) => l.id));
-  const disponibles = candidats.filter((c) => !dejaLies.has(c.id));
+  const sansFiltre = candidats.filter((c) => !dejaLies.has(c.id));
+  const disponibles =
+    estPatient && filtreSpecialite ? sansFiltre.filter((c) => (c.specialites || []).some((s) => s.id === filtreSpecialite)) : sansFiltre;
+  // Seules les spécialités réellement portées par un médecin disponible sont proposées (avec leur effectif).
+  const effectifParSpecialite = new Map();
+  if (estPatient) for (const c of sansFiltre) for (const s of c.specialites || []) effectifParSpecialite.set(s.id, (effectifParSpecialite.get(s.id) || 0) + 1);
+  const optionsSpecialite = specialites
+    .filter((s) => effectifParSpecialite.has(s.id))
+    .map((s) => ({ valeur: s.id, libelle: `${s.libelle} (${effectifParSpecialite.get(s.id)})` }));
   // Fiche du médecin / patient sélectionné dans la liste, relue depuis la base (aucune ressaisie).
   const choisi = disponibles.find((c) => c.id === choix);
   const libelleCandidat = (c) =>
@@ -119,6 +143,17 @@ function Attributions({ utilisateur, liee, surChangement }) {
               )
             )}
           </ul>
+        )}
+        {estPatient && (
+          <Selecteur
+            label="Filtrer les médecins par spécialité"
+            valeur={filtreSpecialite}
+            onChange={(v) => {
+              setFiltreSpecialite(v);
+              setChoix('');
+            }}
+            options={[{ valeur: '', libelle: `Toutes les spécialités (${sansFiltre.length} médecin${sansFiltre.length > 1 ? 's' : ''})` }, ...optionsSpecialite]}
+          />
         )}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">
@@ -231,6 +266,16 @@ export default function DossierUtilisateur({ id, admin = false }) {
     else setErreur('Aucun utilisateur indiqué.');
   }, [id, charger]);
 
+  // Les liens « Documents » / « Commentaires » de la liste des patients arrivent avec une ancre (#documents…) :
+  // la fiche se charge d'abord, puis on défile jusqu'à la bonne section.
+  const dejaDefile = useRef(false);
+  useEffect(() => {
+    if (!donnees || dejaDefile.current || typeof window === 'undefined' || !window.location.hash) return;
+    dejaDefile.current = true;
+    const cible = document.getElementById(window.location.hash.slice(1));
+    if (cible) cible.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [donnees]);
+
   async function supprimerUtilisateur() {
     const u = donnees.utilisateur;
     if (!window.confirm(`Supprimer définitivement le compte de ${u.prenom} ${u.nom}, ainsi que tous ses documents ?`)) return;
@@ -291,14 +336,39 @@ export default function DossierUtilisateur({ id, admin = false }) {
         </dl>
       </Carte>
 
-      <Carte titre={`Documents (${donnees.documents.length})`}>
-        <ListeDocuments
-          documents={donnees.documents}
-          peutSupprimer={admin}
-          surSuppression={charger}
-          vide="Aucun document enregistré par cet utilisateur."
-        />
-      </Carte>
+      <div id="documents" className="scroll-mt-20">
+        <Carte titre={`Documents (${donnees.documents.length})`}>
+          <ListeDocuments
+            documents={donnees.documents}
+            grouper={u.role === 'PATIENT'}
+            // Administrateur : tout ; médecin : uniquement les documents qu'il a lui-même déposés (le serveur revérifie).
+            peutSupprimer={(d) => admin || (moi?.role === 'MEDECIN' && d.deposeParMedecinId === moi.id)}
+            surSuppression={charger}
+            vide="Aucun document enregistré par cet utilisateur."
+          />
+        </Carte>
+      </div>
+
+      {!admin && moi?.role === 'MEDECIN' && u.role === 'PATIENT' && (
+        <Carte titre="Déposer un document dans la fiche de ce patient">
+          <p className="mb-3 text-sm text-slate-600">Le document sera visible par le patient dans son dossier, avec la date de dépôt et votre nom.</p>
+          <TeleversementDocuments chemin={`/utilisateurs/${u.id}/documents`} surTermine={charger} />
+        </Carte>
+      )}
+
+      {u.role === 'PATIENT' && (admin || moi?.role === 'MEDECIN') && (
+        <div id="commentaires" className="scroll-mt-20">
+          <Carte titre={admin ? `Commentaires et pathologies rédigés par les médecins (${(donnees.commentaires || []).length})` : 'Commentaires et pathologies'}>
+            <CommentairesPatient
+              commentaires={donnees.commentaires || []}
+              patientId={u.id}
+              mode={admin ? 'lecture' : 'medecin'}
+              surChangement={charger}
+              vide={admin ? 'Aucun médecin n’a encore saisi de commentaire sur ce patient.' : 'Vous n’avez pas encore saisi de commentaire sur ce patient.'}
+            />
+          </Carte>
+        </div>
+      )}
 
       {admin && u.role === 'MEDECIN' && (
         <FicheMedecin key={u.modifieLe} utilisateur={u} surChangement={charger} />

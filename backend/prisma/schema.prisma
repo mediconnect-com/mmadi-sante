@@ -71,6 +71,9 @@ model Utilisateur {
   specialites  MedecinSpecialite[]
   rdvCommePatient RendezVous[] @relation("RdvPatient")
   rdvCommeMedecin RendezVous[] @relation("RdvMedecin")
+  documentsDeposes   Document[]           @relation("DocumentDeposePar")
+  commentairesRecus  CommentairePatient[] @relation("CommentairePatient")
+  commentairesRediges CommentairePatient[] @relation("CommentaireMedecin")
 
   @@index([role])
   @@map("utilisateurs")
@@ -88,10 +91,17 @@ model Document {
   /// Contenu binaire du fichier (bytea).
   contenu        Bytes
   creeLe         DateTime          @default(now()) @map("cree_le") @db.Timestamptz(6)
+  /// Médecin qui a déposé le document dans la fiche du patient (null = déposé par le patient lui-même).
+  deposeParMedecinId String?       @map("depose_par_medecin_id") @db.Uuid
+  /// Nom du médecin au moment du dépôt (reste lisible même si sa fiche est supprimée ensuite).
+  deposeParNom   String?           @map("depose_par_nom")
 
-  proprietaire Utilisateur @relation(fields: [proprietaireId], references: [id], onDelete: Cascade)
+  proprietaire     Utilisateur  @relation(fields: [proprietaireId], references: [id], onDelete: Cascade)
+  deposeParMedecin Utilisateur? @relation("DocumentDeposePar", fields: [deposeParMedecinId], references: [id], onDelete: SetNull)
 
   @@index([proprietaireId])
+  @@index([deposeParMedecinId])
+  @@index([proprietaireId, creeLe])
   @@map("documents")
 }
 
@@ -157,4 +167,24 @@ model RendezVous {
   @@index([patientId])
   @@index([medecinId, dateHeure])
   @@map("rendez_vous")
+}
+
+/// Commentaire et pathologies d'un patient, rédigés par un de ses médecins ; le patient peut les lire.
+model CommentairePatient {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientId  String   @map("patient_id") @db.Uuid
+  /// Médecin auteur (null si sa fiche a été supprimée : son nom est conservé dans medecinNom).
+  medecinId  String?  @map("medecin_id") @db.Uuid
+  medecinNom String   @map("medecin_nom")
+  pathologies String?
+  commentaire String?
+  creeLe     DateTime @default(now()) @map("cree_le") @db.Timestamptz(6)
+  modifieLe  DateTime @default(now()) @updatedAt @map("modifie_le") @db.Timestamptz(6)
+
+  patient Utilisateur  @relation("CommentairePatient", fields: [patientId], references: [id], onDelete: Cascade)
+  medecin Utilisateur? @relation("CommentaireMedecin", fields: [medecinId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, creeLe])
+  @@index([medecinId])
+  @@map("commentaires_patients")
 }

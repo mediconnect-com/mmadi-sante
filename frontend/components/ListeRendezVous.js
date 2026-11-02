@@ -58,8 +58,17 @@ function LigneRendezVous({ rdv, role, surChangement, surErreur }) {
   return (
     <li className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-base font-semibold text-slate-900 first-letter:uppercase">{formaterDateHeure(rdv.dateHeure)}</p>
-        <BadgeStatut statut={rdv.statut} />
+        <p className="text-base font-semibold text-slate-900 first-letter:uppercase">
+          <Link href={`/rendez-vous/detail/?id=${rdv.id}`} className="hover:text-marque-700 hover:underline" aria-label={`Ouvrir le rendez-vous du ${formaterDateHeure(rdv.dateHeure)}`}>
+            {formaterDateHeure(rdv.dateHeure)}
+          </Link>
+        </p>
+        <span className="flex items-center gap-2">
+          <BadgeStatut statut={rdv.statut} />
+          <Link href={`/rendez-vous/detail/?id=${rdv.id}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            Ouvrir
+          </Link>
+        </span>
       </div>
       {rdv.motif && (
         <p className="mb-3 text-sm text-slate-700">

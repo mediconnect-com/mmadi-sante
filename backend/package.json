@@ -1,6 +1,6 @@
 {
   "name": "mmadi-sante-api",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "API MmadiSanté : dossiers de santé avec contrôle d'accès par profil (patient, médecin, administrateur)",
   "main": "src/server.js",
@@ -13,7 +13,7 @@
     "build": "prisma generate",
     "migrer": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
-    "test": "node --test --test-concurrency=1 tests/acces.test.js tests/specialites-rdv.test.js",
+    "test": "node --test --test-concurrency=1 tests/acces.test.js tests/specialites-rdv.test.js tests/v3.test.js",
     "supprimer-demo": "node prisma/supprimer-demo.js"
   },
   "dependencies": {

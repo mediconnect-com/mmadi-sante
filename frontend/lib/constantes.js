@@ -89,3 +89,36 @@ export function maintenantPourChamp() {
   const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
   return d.toISOString().slice(0, 16);
 }
+
+// --- V3 : dates de dépôt, documents récents / historiques ---
+/** Un document est « récent » pendant ce nombre de jours après son dépôt (même valeur que l'API : 30). */
+export const JOURS_RECENT = 30;
+
+export function estRecent(iso, jours = JOURS_RECENT) {
+  return Boolean(iso) && Date.now() - new Date(iso).getTime() < jours * 86400000;
+}
+
+/** « aujourd'hui », « hier », « il y a 5 jours », « il y a 3 mois »… */
+export function formaterDepuis(iso) {
+  if (!iso) return '';
+  const jours = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (jours <= 0) return "aujourd'hui";
+  if (jours === 1) return 'hier';
+  if (jours < 31) return `il y a ${jours} jours`;
+  const mois = Math.floor(jours / 30);
+  if (mois < 12) return `il y a ${mois} mois`;
+  const ans = Math.floor(mois / 12);
+  return `il y a ${ans} an${ans > 1 ? 's' : ''}`;
+}
+
+/** « 2 nov. 2026 » (sans l'heure). */
+export function formaterJour(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** Masque un numéro : « •••••6789 ». */
+export function masquer(valeur) {
+  if (!valeur) return '';
+  return `${'•'.repeat(Math.max(valeur.length - 4, 3))}${valeur.slice(-4)}`;
+}

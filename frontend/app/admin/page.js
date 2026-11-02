@@ -7,13 +7,19 @@ import { useAuth } from '@/lib/auth';
 import Protege from '@/components/Protege';
 import { Alerte, BadgeRole, Bouton, Carte, Champ, Chargement, Page, Selecteur } from '@/components/ui';
 
-function Statistique({ valeur, libelle }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+function Statistique({ valeur, libelle, href, onClick, actif = false }) {
+  const classes = `block rounded-xl border bg-white p-4 text-center shadow-sm ${actif ? 'border-marque-500 ring-2 ring-marque-200' : 'border-slate-200'} ${
+    href || onClick ? 'transition hover:border-marque-400 hover:shadow focus:outline-none focus:ring-2 focus:ring-marque-300' : ''
+  }`;
+  const contenu = (
+    <>
       <p className="text-2xl font-bold text-marque-700">{valeur}</p>
       <p className="text-xs text-slate-500">{libelle}</p>
-    </div>
+    </>
   );
+  if (href) return <Link href={href} className={classes}>{contenu}</Link>;
+  if (onClick) return <button type="button" onClick={onClick} className={`${classes} w-full`}>{contenu}</button>;
+  return <div className={classes}>{contenu}</div>;
 }
 
 function Contenu() {
@@ -65,12 +71,13 @@ function Contenu() {
       }
     >
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <Statistique valeur={stats.patients} libelle="Patients" />
-          <Statistique valeur={stats.medecins} libelle="Médecins" />
-          <Statistique valeur={stats.admins} libelle="Administrateurs" />
-          <Statistique valeur={stats.documents} libelle="Documents" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+          <Statistique valeur={stats.patients} libelle="Patients" actif={role === 'PATIENT'} onClick={() => setRole(role === 'PATIENT' ? '' : 'PATIENT')} />
+          <Statistique valeur={stats.medecins} libelle="Médecins" actif={role === 'MEDECIN'} onClick={() => setRole(role === 'MEDECIN' ? '' : 'MEDECIN')} />
+          <Statistique valeur={stats.admins} libelle="Administrateurs" actif={role === 'ADMIN'} onClick={() => setRole(role === 'ADMIN' ? '' : 'ADMIN')} />
+          <Statistique valeur={stats.documents} libelle="Documents" href="/admin/documents/" />
           <Statistique valeur={stats.attributions} libelle="Attributions" />
+          <Statistique valeur={stats.rendezVous ?? 0} libelle="Rendez-vous (tout voir)" href="/rendez-vous/" />
         </div>
       )}
 

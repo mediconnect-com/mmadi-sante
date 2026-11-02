@@ -2,39 +2,18 @@
 // Aucun identifiant n'est lu dans l'URL ici : tout est basé sur req.utilisateur (issu du jeton + base).
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const multer = require('multer');
-const config = require('../config');
 const prisma = require('../lib/prisma');
 const { chiffrer } = require('../lib/chiffrement');
 const { ErreurHttp, asyncHandler } = require('../lib/erreurs');
-const { schemaMajProfil, schemaChangementMotDePasse, schemaDocument } = require('../lib/validation');
-const { utilisateurPublic, medecinPublic, INCLURE_SPECIALITES, selectDocumentSansContenu } = require('../lib/serialiser');
+const { schemaMajProfil, schemaChangementMotDePasse } = require('../lib/validation');
+const { utilisateurPublic, medecinPublic, commentairePublic, INCLURE_SPECIALITES, selectDocumentSansContenu } = require('../lib/serialiser');
 const { remplacerSpecialites } = require('../lib/medecins');
 const { idValide } = require('../lib/validation');
-const { fichierValide, nettoyerNomFichier } = require('../lib/fichiers');
+const { televerser, enregistrerDocuments } = require('../lib/documents');
 const { authentifier } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authentifier);
-
-// Les fichiers restent en mémoire puis sont enregistrés dans la base (colonne bytea).
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: config.tailleMaxFichierOctets, files: config.maxFichiersParEnvoi },
-});
-
-function televerser(req, res, next) {
-  upload.array('fichiers', config.maxFichiersParEnvoi)(req, res, (err) => {
-    if (!err) return next();
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return next(new ErreurHttp(413, `Fichier trop volumineux (maximum ${config.tailleMaxFichierOctets / 1024 / 1024} Mo).`));
-      }
-      return next(new ErreurHttp(400, `Envoi invalide (maximum ${config.maxFichiersParEnvoi} fichiers à la fois).`));
-    }
-    next(err);
-  });
-}
 
 // GET /api/v1/profil
 router.get(
@@ -135,37 +114,18 @@ router.post(
   '/documents',
   televerser,
   asyncHandler(async (req, res) => {
-    const fichiers = req.files || [];
-    if (fichiers.length === 0) throw new ErreurHttp(400, 'Aucun fichier reçu.');
-    const meta = schemaDocument.parse(req.body);
+    const documents = await enregistrerDocuments(req, req.utilisateur.id, null);
+    res.status(201).json({ documents });
+  })
+);
 
-    const dejaPresents = await prisma.document.count({ where: { proprietaireId: req.utilisateur.id } });
-    if (dejaPresents + fichiers.length > config.maxDocumentsParUtilisateur) {
-      throw new ErreurHttp(400, `Limite de ${config.maxDocumentsParUtilisateur} documents atteinte.`);
-    }
-    for (const f of fichiers) {
-      if (!fichierValide(f.mimetype, f.buffer)) {
-        throw new ErreurHttp(400, `« ${nettoyerNomFichier(f.originalname)} » refusé : seuls les PDF, JPG et PNG valides sont acceptés.`);
-      }
-    }
-
-    const crees = [];
-    for (const f of fichiers) {
-      const doc = await prisma.document.create({
-        data: {
-          proprietaireId: req.utilisateur.id,
-          nomFichier: nettoyerNomFichier(f.originalname),
-          typeMime: f.mimetype,
-          tailleOctets: f.size,
-          categorie: meta.categorie,
-          description: meta.description,
-          contenu: f.buffer,
-        },
-        select: selectDocumentSansContenu,
-      });
-      crees.push(doc);
-    }
-    res.status(201).json({ documents: crees });
+// GET /api/v1/profil/commentaires — V3 : commentaires et pathologies rédigés par MES médecins (lecture seule)
+router.get(
+  '/commentaires',
+  asyncHandler(async (req, res) => {
+    if (req.utilisateur.role !== 'PATIENT') throw new ErreurHttp(403, "Accès refusé : votre profil n'a pas le droit d'effectuer cette action.");
+    const lignes = await prisma.commentairePatient.findMany({ where: { patientId: req.utilisateur.id }, orderBy: { creeLe: 'desc' } });
+    res.json({ commentaires: lignes.map(commentairePublic) });
   })
 );
 

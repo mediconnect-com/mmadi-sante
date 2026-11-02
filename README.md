@@ -10,7 +10,7 @@ Application web pour saisir et consulter des informations de santé : **nom, pr�
 | **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations et documents des patients **qui lui sont attribués**, et seulement ceux-là. |
 | **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes et fiches médecins de tout profil, gérer la liste des **spécialités**, attribuer les patients aux médecins. |
 
-Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 53 tests automatisés.
+Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 82 tests automatisés.
 
 **Technologies** : Node.js + Express + Prisma (API) · Next.js + React + Tailwind (site, export statique) · PostgreSQL · interface et commentaires en français.
 
@@ -39,13 +39,14 @@ mmadi-sante/
 ├── backend/                 API Express + Prisma (routes sous /api/v1)
 │   ├── src/                 code : routes, middleware d'accès, chiffrement, validation
 │   ├── prisma/              schema.prisma, migrations/, seed.js
-│   ├── tests/               53 tests automatisés (npm test)
+│   ├── tests/               82 tests automatisés (npm test)
 │   └── .env.example         variables d'environnement documentées
 ├── frontend/                site Next.js + Tailwind (responsive mobile/tablette)
 │   └── .env.example
 ├── database/
 │   ├── schema.sql           ★ création des tables en SQL pur (éditeur SQL Supabase)
 │   ├── mise_a_jour_v2.sql   ★ mise à jour d'une base déjà en service (spécialités, rendez-vous)
+│   ├── mise_a_jour_v3.sql   ★ mise à jour V3 (commentaires de pathologies, documents déposés par un médecin)
 │   ├── seed_demo.sql        ★ comptes de démonstration en SQL pur
 │   └── supprimer_comptes_demo.sql   ★ retire les 4 comptes de démonstration (et eux seuls)
 ├── scripts/                 ★ scripts guidés pour non-développeurs (voir ci-dessous)
@@ -53,6 +54,24 @@ mmadi-sante/
 ├── docker-compose.yml       PostgreSQL de test en local (facultatif)
 └── README.md
 ```
+
+---
+
+## Nouveautés de la version 3
+
+| Évolution | Où la trouver |
+|---|---|
+| **Mes patients** (médecin) : recherche, tri, badges (documents récents, prochain rendez-vous, commentaires), clic sur toute la ligne pour ouvrir la fiche, liens directs « Documents » et « Commentaires » | menu *Mes patients* |
+| **Documents datés, récents / historique** : chaque document affiche sa date de dépôt, « il y a N jours » et qui l'a déposé ; les documents de moins de **30 jours** sont regroupés sous *Récents*, les autres sous *Historique* | fiche d'un patient (médecin, administrateur) et *Mon dossier* du patient |
+| **Choisir un médecin par spécialité** : filtre « spécialité » (avec l'effectif de chaque spécialité) avant la liste des médecins à attribuer | fiche d'un patient, côté administrateur (*Médecins attribués*) |
+| **Mon profil en lecture** : les informations s'affichent en lecture ; « Modifier mes informations » ouvre le formulaire ; « Enregistrer » ou « Annuler » ramène à la lecture. Le numéro de carte d'identité est masqué en lecture | *Mon profil* / *Mon dossier* (tous les profils) |
+| **Commentaires et pathologies** : un médecin saisit, modifie et supprime ses commentaires sur ses patients ; le patient les lit dans *Mon dossier* ; l'administrateur les voit dans la fiche du patient ; **un confrère ne les voit pas** | fiche d'un patient (médecin) · *Mon dossier* (patient) |
+| **Dépôt de documents par le médecin** dans la fiche de ses patients (mêmes contrôles que pour un patient : PDF, JPG, PNG) ; le patient les voit avec la date et le nom du médecin | fiche d'un patient (médecin) |
+| **Administrateur : accès par clic à tous les rendez-vous** : la tuile *Rendez-vous* de l'accueil administrateur ouvre la liste, et « Ouvrir » affiche le détail d'un rendez-vous (patient, médecin, statut, actions, liens vers les fiches). Disponible aussi pour le patient et le médecin concernés | accueil administrateur · *Rendez-vous* |
+
+**Règles de suppression des documents (V3).** Un document déposé **par le patient** : supprimable par lui et par l'administrateur. Un document déposé **par un médecin** dans la fiche du patient : supprimable par ce médecin et par l'administrateur, **pas par le patient** (il fait partie du dossier médical). Si le médecin est supprimé, ses documents et commentaires restent, avec son nom.
+
+**Mise à jour d'une base en service.** Rien à faire : au démarrage, l'API applique la migration `0004_commentaires_documents_medecin` (rejouable sans risque, aucune donnée existante n'est modifiée ni supprimée). Si les logs affichent une erreur, collez `database/mise_a_jour_v3.sql` dans l'éditeur SQL de Supabase. Une nouvelle base créée avec `database/schema.sql` contient déjà tout.
 
 ---
 
@@ -281,9 +300,9 @@ Aucun fichier de configuration n'est fourni pour Railway. Le principe reste le m
 ## Mettre à jour une application déjà en ligne
 
 1. Remplacez les fichiers du projet par ceux de la nouvelle version (**sans** écraser vos fichiers `.env`).
-2. Envoyez-les sur GitHub (`git add -A`, `git commit -m "Version 2"`, `git push origin main`) : Render redéploie l'API et le site automatiquement (`autoDeploy`).
-3. **La base de données se met à jour toute seule** au démarrage de l'API : création des tables `specialites`, `medecin_specialites` et `rendez_vous`, ajout des colonnes de la fiche médecin et de la liste des 59 spécialités. Cette mise à jour **n'efface et ne modifie aucune donnée existante** (comptes, documents, attributions) et peut être rejouée sans risque. Dans les logs de l'API, vous verrez soit `prisma migrate deploy` réussir, soit `Mise à jour de la base appliquée : 0003_specialites_rendez_vous`.
-4. Si les logs affichent « ERREUR pendant la mise à jour de la base », collez `database/mise_a_jour_v2.sql` dans l'éditeur SQL de Supabase (même effet, à la main), puis relancez le déploiement.
+2. Envoyez-les sur GitHub (`git add -A`, `git commit -m "Version 3"`, `git push origin main`) : Render redéploie l'API et le site automatiquement (`autoDeploy`).
+3. **La base de données se met à jour toute seule** au démarrage de l'API (V3 : table `commentaires_patients` et colonnes `depose_par_medecin_id` / `depose_par_nom` des documents ; V2 : création des tables `specialites`, `medecin_specialites` et `rendez_vous`, ajout des colonnes de la fiche médecin et de la liste des 59 spécialités. Cette mise à jour **n'efface et ne modifie aucune donnée existante** (comptes, documents, attributions) et peut être rejouée sans risque. Dans les logs de l'API, vous verrez soit `prisma migrate deploy` réussir, soit `Mise à jour de la base appliquée : 0003_specialites_rendez_vous`.
+4. Si les logs affichent « ERREUR pendant la mise à jour de la base », collez `database/mise_a_jour_v2.sql` puis `database/mise_a_jour_v3.sql` dans l'éditeur SQL de Supabase (même effet, à la main ; si votre base est déjà en V2, seul le fichier V3 est nécessaire), puis relancez le déploiement.
 5. Aucune variable d'environnement n'est à ajouter. Vous pouvez supprimer `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` du service `mmadi-sante-web` : elle n'est plus utilisée.
 
 > Si vous avez défini `SKIP_MIGRATE=true` sur l'API, retirez-le pour que la mise à jour s'applique.
@@ -337,9 +356,12 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `PUT /profil/mot-de-passe` | connecté | changer son mot de passe |
 | `GET` / `POST /profil/documents` | connecté | lister / envoyer **ses** documents (champ `fichiers`, 5 max) |
 | `GET /documents/:id` | propriétaire, médecin attribué, admin | télécharger un document |
-| `DELETE /documents/:id` | propriétaire, admin | supprimer un document |
-| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche et documents d'un utilisateur |
-| `GET /medecin/patients` | médecin | **ses** patients attribués |
+| `DELETE /documents/:id` | propriétaire (documents qu'il a déposés), médecin dépositaire, admin | supprimer un document |
+| `POST /utilisateurs/:id/documents` | **médecin attribué** | déposer un ou plusieurs documents dans la fiche d'un patient (V3) |
+| `POST /commentaires`, `PUT` / `DELETE /commentaires/:id` | **médecin** (auteur, patient attribué) | commentaires et pathologies d'un patient (V3) |
+| `GET /profil/commentaires` | patient | lire les commentaires de **ses** médecins (V3) |
+| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche, documents et (patient) commentaires visibles par le demandeur |
+| `GET /medecin/patients` | médecin | **ses** patients attribués, avec documents (récents), dernier dépôt, prochain rendez-vous, commentaires (V3) |
 | `GET /specialites` (`?toutes=true` : admin) | connecté | liste des spécialités actives |
 | `POST /specialites`, `PUT /specialites/:id` | admin | ajouter, modifier, désactiver / réactiver (`actif`) |
 | `GET /medecins?q=&specialiteId=&type=`, `GET /medecins/:id` | patient, admin | annuaire des médecins (jamais l'e-mail ni le hash) |
@@ -348,6 +370,7 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `GET /profil/medecins`, `DELETE /profil/medecins/:id` | patient | **mes** médecins (fiche complète) / retirer l'accès |
 | `GET /rendez-vous` | connecté | patient : les siens · médecin : ceux qui le concernent · admin : tous |
 | `POST /rendez-vous` | patient | `medecinId` **ou** `nouveauMedecin` (vérification anti-doublon + création) |
+| `GET /rendez-vous/:id` | patient / médecin concernés, admin | détail d'un rendez-vous (V3) |
 | `PATCH /rendez-vous/:id/statut` | patient (annuler les siens), médecin (confirmer/refuser/annuler les siens), admin | changer le statut |
 | `PUT /admin/medecins/:id` | admin | modifier la fiche d'un médecin |
 | `GET /admin/statistiques`, `/admin/utilisateurs`, `/admin/documents`, `/admin/attributions` | admin | consultation globale |

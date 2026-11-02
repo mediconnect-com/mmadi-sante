@@ -7,7 +7,7 @@ import { Alerte, Bouton, Champ, Selecteur } from './ui';
 const EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
 
 /** Formulaire d'envoi d'un ou plusieurs documents (ordonnance, diagnostic, ...). */
-export default function TeleversementDocuments({ surTermine }) {
+export default function TeleversementDocuments({ surTermine, chemin = '/profil/documents' }) {
   const [fichiers, setFichiers] = useState([]);
   const [categorie, setCategorie] = useState('ORDONNANCE');
   const [description, setDescription] = useState('');
@@ -40,7 +40,7 @@ export default function TeleversementDocuments({ surTermine }) {
       fichiers.forEach((f) => formData.append('fichiers', f));
       formData.append('categorie', categorie);
       if (description.trim()) formData.append('description', description.trim());
-      const r = await appelApi('/profil/documents', { methode: 'POST', formData });
+      const r = await appelApi(chemin, { methode: 'POST', formData });
       setSucces(`${r.documents.length} document(s) enregistré(s).`);
       setFichiers([]);
       setDescription('');

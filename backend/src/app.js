@@ -40,6 +40,7 @@ v1.use('/auth', require('./routes/auth'));
 v1.use('/profil', require('./routes/profil'));
 v1.use('/utilisateurs', require('./routes/utilisateurs'));
 v1.use('/documents', require('./routes/documents'));
+v1.use('/commentaires', require('./routes/commentaires'));
 v1.use('/medecin', require('./routes/medecin'));
 v1.use('/admin', require('./routes/admin'));
 v1.use('/specialites', require('./routes/specialites'));

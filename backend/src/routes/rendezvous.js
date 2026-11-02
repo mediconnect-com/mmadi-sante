@@ -70,6 +70,34 @@ router.get(
   })
 );
 
+// GET /api/v1/rendez-vous/:id — V3 : détail d'un rendez-vous (patient concerné, médecin concerné, administrateur)
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const id = idValide(req.params.id);
+    const acteur = req.utilisateur;
+    const r = await prisma.rendezVous.findUnique({ where: { id }, include: INCLURE_RDV });
+    if (!r) throw new ErreurHttp(404, 'Rendez-vous introuvable.');
+    const concerne = acteur.role === 'ADMIN' || (acteur.role === 'PATIENT' && r.patientId === acteur.id) || (acteur.role === 'MEDECIN' && r.medecinId === acteur.id);
+    if (!concerne) throw new ErreurHttp(403, "Accès refusé : ce rendez-vous ne vous concerne pas.");
+    let accessibles = new Set();
+    if (acteur.role === 'MEDECIN') {
+      const attrib = await prisma.attribution.findUnique({
+        where: { patientId_medecinId: { patientId: r.patientId, medecinId: acteur.id } },
+        select: { id: true },
+      });
+      if (attrib) accessibles = new Set([r.patientId]);
+    }
+    const rep = rdvPublic(r, acteur, accessibles);
+    rep.modifieLe = r.modifieLe;
+    if (acteur.role === 'ADMIN') {
+      const p = await prisma.utilisateur.findUnique({ where: { id: r.patientId }, select: { email: true } });
+      rep.patient.email = p ? p.email : null;
+    }
+    res.json({ rendezVous: rep });
+  })
+);
+
 // POST /api/v1/rendez-vous — réservé aux patients
 router.post(
   '/',

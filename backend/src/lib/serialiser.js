@@ -76,7 +76,24 @@ const selectDocumentSansContenu = {
   categorie: true,
   description: true,
   creeLe: true,
+  // V3 : déposé par un médecin dans la fiche du patient (sinon null = déposé par le patient lui-même).
+  deposeParMedecinId: true,
+  deposeParNom: true,
 };
+
+/** Commentaire / pathologies rédigés par un médecin (visibles par le patient, l'auteur et l'administrateur). */
+function commentairePublic(c) {
+  return {
+    id: c.id,
+    patientId: c.patientId,
+    medecinId: c.medecinId,
+    medecinNom: c.medecinNom,
+    pathologies: c.pathologies,
+    commentaire: c.commentaire,
+    creeLe: c.creeLe,
+    modifieLe: c.modifieLe,
+  };
+}
 
 module.exports = {
   utilisateurPublic,
@@ -85,4 +102,5 @@ module.exports = {
   typeProfessionnel,
   INCLURE_SPECIALITES,
   selectDocumentSansContenu,
+  commentairePublic,
 };

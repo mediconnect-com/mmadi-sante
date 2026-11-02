@@ -34,11 +34,16 @@ router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = idValide(req.params.id);
-    const doc = await prisma.document.findUnique({ where: { id }, select: { id: true, proprietaireId: true } });
+    const doc = await prisma.document.findUnique({ where: { id }, select: { id: true, proprietaireId: true, deposeParNom: true, deposeParMedecinId: true } });
     if (!doc) throw new ErreurHttp(404, 'Document introuvable.');
 
-    const estProprietaire = doc.proprietaireId === req.utilisateur.id;
-    if (!estProprietaire && req.utilisateur.role !== 'ADMIN') {
+    // Un document déposé PAR UN MÉDECIN dans la fiche du patient fait partie du dossier médical : il ne peut être
+    // supprimé que par ce médecin ou par l'administrateur (pas par le patient). Les autres : propriétaire ou admin.
+    const deposeParMedecin = Boolean(doc.deposeParNom);
+    const autorise =
+      req.utilisateur.role === 'ADMIN' ||
+      (deposeParMedecin ? doc.deposeParMedecinId === req.utilisateur.id : doc.proprietaireId === req.utilisateur.id);
+    if (!autorise) {
       throw new ErreurHttp(403, "Accès refusé : vous ne pouvez pas supprimer ce document.");
     }
     await prisma.document.delete({ where: { id } });
