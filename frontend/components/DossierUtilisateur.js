@@ -247,6 +247,59 @@ function FicheMedecin({ utilisateur, surChangement }) {
   );
 }
 
+/** Réinitialisation du mot de passe d'un utilisateur par l'administrateur (PUT /admin/utilisateurs/:id/mot-de-passe). */
+function ReinitialisationMotDePasse({ utilisateur }) {
+  const [mdp, setMdp] = useState('');
+  const [voir, setVoir] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const [succes, setSucces] = useState('');
+  const [enCours, setEnCours] = useState(false);
+
+  async function envoyer(e) {
+    e.preventDefault();
+    setErreur('');
+    setSucces('');
+    setEnCours(true);
+    try {
+      const r = await appelApi(`/admin/utilisateurs/${utilisateur.id}/mot-de-passe`, { methode: 'PUT', json: { nouveauMotDePasse: mdp } });
+      setSucces(r.message);
+      setMdp('');
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <Carte titre="Mot de passe">
+      <p className="mb-3 text-sm text-slate-600">
+        Un mot de passe ne peut pas être consulté (il est stocké chiffré). En cas d’oubli, définissez-en un nouveau et communiquez-le à {utilisateur.prenom} par un canal sûr ; il pourra ensuite le changer lui-même dans Mon profil.
+      </p>
+      <form onSubmit={envoyer} className="space-y-3">
+        <Champ
+          label="Nouveau mot de passe"
+          type={voir ? 'text' : 'password'}
+          valeur={mdp}
+          onChange={setMdp}
+          requis
+          maxLength={100}
+          autoComplete="new-password"
+          aide="8 caractères minimum, avec au moins une lettre et un chiffre."
+        />
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={voir} onChange={(e) => setVoir(e.target.checked)} /> Afficher le mot de passe
+        </label>
+        <Alerte>{erreur}</Alerte>
+        <Alerte type="succes">{succes}</Alerte>
+        <Bouton type="submit" enCours={enCours}>
+          Modifier le mot de passe
+        </Bouton>
+      </form>
+    </Carte>
+  );
+}
+
 export default function DossierUtilisateur({ id, admin = false }) {
   const router = useRouter();
   const { utilisateur: moi } = useAuth();
@@ -419,6 +472,8 @@ export default function DossierUtilisateur({ id, admin = false }) {
       {admin && u.role === 'MEDECIN' && (
         <Attributions utilisateur={u} liee={donnees.patients || []} surChangement={charger} />
       )}
+
+      {admin && u.id !== moi?.id && !u.sansCompte && <ReinitialisationMotDePasse utilisateur={u} />}
 
       {admin && u.id !== moi?.id && (
         <Carte titre="Zone sensible">

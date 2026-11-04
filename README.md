@@ -10,7 +10,7 @@ Application web pour saisir et consulter des informations de santé : **nom, pr�
 | **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations des patients **qui lui sont attribués** (jamais leurs documents), rédiger un commentaire de pathologies à l'issue d'un rendez-vous et déposer des documents dans leur fiche. |
 | **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes et fiches médecins de tout profil, gérer la liste des **spécialités**, attribuer les patients aux médecins. |
 
-Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 87 tests automatisés.
+Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 90 tests automatisés.
 
 **Technologies** : Node.js + Express + Prisma (API) · Next.js + React + Tailwind (site, export statique) · PostgreSQL · interface et commentaires en français.
 
@@ -39,7 +39,7 @@ mmadi-sante/
 ├── backend/                 API Express + Prisma (routes sous /api/v1)
 │   ├── src/                 code : routes, middleware d'accès, chiffrement, validation
 │   ├── prisma/              schema.prisma, migrations/, seed.js
-│   ├── tests/               87 tests automatisés (npm test)
+│   ├── tests/               90 tests automatisés (npm test)
 │   └── .env.example         variables d'environnement documentées
 ├── frontend/                site Next.js + Tailwind (responsive mobile/tablette)
 │   └── .env.example
@@ -67,6 +67,7 @@ mmadi-sante/
 | **Mon profil en lecture** : les informations s'affichent en lecture ; « Modifier mes informations » ouvre le formulaire ; « Enregistrer » ou « Annuler » ramène à la lecture. Le numéro de carte d'identité est masqué en lecture | *Mon profil* / *Mon dossier* (tous les profils) |
 | **Commentaires et pathologies, liés à un rendez-vous** : un médecin ne peut commenter qu'un **rendez-vous avec son patient, confirmé et déjà commencé**, un seul commentaire par rendez-vous (modifiable, supprimable par son auteur). Le patient les lit dans *Mon dossier* avec le rendez-vous concerné ; l'administrateur les voit ; **un confrère ne les voit pas** | fiche du patient et détail du rendez-vous (médecin) · *Mon dossier* (patient) |
 | **Dépôt de documents par le médecin** dans la fiche de ses patients (PDF, JPG, PNG). Le patient les voit avec la date et le nom du médecin. **Le médecin ne peut ensuite ni les rouvrir ni voir les documents du patient** : il garde seulement un accusé de dépôt (nom, date, sans contenu) | fiche du patient (médecin) · *Mon dossier* (patient) |
+| **Administrateur : changer le mot de passe d'un utilisateur** (oubli). Un mot de passe n'est jamais lisible (il est stocké chiffré) : l'administrateur en définit un nouveau (8 caractères minimum, lettre + chiffre) et le communique à l'utilisateur, qui peut ensuite le changer dans *Mon profil*. Impossible pour son propre compte (utiliser *Mon profil*) et pour une fiche médecin sans compte de connexion | fiche d'un utilisateur, carte *Mot de passe* (administrateur) |
 | **Administrateur : accès par clic à tous les rendez-vous** : la tuile *Rendez-vous* de l'accueil administrateur ouvre la liste, et « Ouvrir » affiche le détail d'un rendez-vous (patient, médecin, statut, actions, liens vers les fiches). Disponible aussi pour le patient et le médecin concernés | accueil administrateur · *Rendez-vous* |
 
 **Confidentialité des documents (V3).** Les documents d'un patient (déposés par lui ou par un médecin) ne sont accessibles qu'au **patient** et à l'**administrateur** ; l'API répond 403 à un médecin, même attribué, même pour son propre dépôt.
@@ -378,6 +379,7 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `PUT /admin/medecins/:id` | admin | modifier la fiche d'un médecin |
 | `GET /admin/statistiques`, `/admin/utilisateurs`, `/admin/documents`, `/admin/attributions` | admin | consultation globale |
 | `POST /admin/utilisateurs` | admin | créer un compte de n'importe quel profil (médecin : spécialités, adresse pro, option « sans compte ») |
+| `PUT /admin/utilisateurs/:id/mot-de-passe` | admin | définir un nouveau mot de passe pour un utilisateur (V3) |
 | `DELETE /admin/utilisateurs/:id` | admin | supprimer un utilisateur (et ses documents) |
 | `POST` / `DELETE /admin/attributions` | admin | attribuer / retirer un patient d'un médecin |
 

@@ -113,6 +113,10 @@ const schemaChangementMotDePasse = z.object({
   nouveauMotDePasse: motDePasse,
 });
 
+const schemaReinitialisationMotDePasse = z.object({
+  nouveauMotDePasse: motDePasse,
+});
+
 const schemaAttribution = z.object({
   patientId: z.string().uuid('Identifiant patient invalide.'),
   medecinId: z.string().uuid('Identifiant médecin invalide.'),
@@ -210,6 +214,7 @@ module.exports = {
   schemaConnexion,
   schemaMajProfil,
   schemaChangementMotDePasse,
+  schemaReinitialisationMotDePasse,
   schemaAttribution,
   schemaDocument,
   schemaCommentaire,
