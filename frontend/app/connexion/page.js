@@ -37,6 +37,11 @@ export default function PageConnexion() {
         <form onSubmit={valider} className="space-y-4">
           <Champ label="Adresse e-mail" type="email" valeur={email} onChange={setEmail} requis autoComplete="email" />
           <Champ label="Mot de passe" type="password" valeur={motDePasse} onChange={setMotDePasse} requis autoComplete="current-password" />
+          <p className="-mt-2 text-right text-sm">
+            <Link href={`/mot-de-passe-oublie/${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`} className="font-medium text-marque-700 hover:underline">
+              Mot de passe oublié ?
+            </Link>
+          </p>
           <Alerte>{erreur}</Alerte>
           <Bouton type="submit" enCours={enCours} className="w-full">
             Se connecter

@@ -74,6 +74,7 @@ model Utilisateur {
   documentsDeposes   Document[]           @relation("DocumentDeposePar")
   commentairesRecus  CommentairePatient[] @relation("CommentairePatient")
   commentairesRediges CommentairePatient[] @relation("CommentaireMedecin")
+  reinitialisationsMotDePasse ReinitialisationMotDePasse[]
 
   @@index([role])
   @@map("utilisateurs")
@@ -192,4 +193,20 @@ model CommentairePatient {
   @@index([patientId, creeLe])
   @@index([medecinId])
   @@map("commentaires_patients")
+}
+
+/// Demande de réinitialisation de mot de passe (« mot de passe oublié »).
+/// Le jeton envoyé par e-mail n'est JAMAIS stocké : seule son empreinte SHA-256 l'est. Usage unique, durée limitée.
+model ReinitialisationMotDePasse {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  utilisateurId String      @map("utilisateur_id") @db.Uuid
+  jetonHash     String      @unique @map("jeton_hash")
+  expireLe      DateTime    @map("expire_le") @db.Timestamptz(6)
+  utiliseLe     DateTime?   @map("utilise_le") @db.Timestamptz(6)
+  creeLe        DateTime    @default(now()) @map("cree_le") @db.Timestamptz(6)
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId, creeLe])
+  @@map("reinitialisations_mot_de_passe")
 }

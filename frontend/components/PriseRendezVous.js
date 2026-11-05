@@ -16,10 +16,19 @@ const FICHE_VIDE = { nom: '', prenom: '', telephone: '', adresseProfessionnelle:
 function Recherche({ surChoix, surNouveau }) {
   const [q, setQ] = useState('');
   const [specialiteIds, setSpecialiteIds] = useState([]);
+  // Aucun médecin n'est affiché d'office : la liste n'apparaît qu'après une recherche (nom, spécialité) ou un clic sur « Afficher tous les médecins ».
+  const [tous, setTous] = useState(false);
   const [resultat, setResultat] = useState(null);
   const [erreur, setErreur] = useState('');
 
+  const rechercheActive = Boolean(q.trim() || specialiteIds[0] || tous);
+
   useEffect(() => {
+    if (!rechercheActive) {
+      setResultat(null);
+      setErreur('');
+      return undefined;
+    }
     let actif = true;
     const t = setTimeout(async () => {
       try {
@@ -39,7 +48,7 @@ function Recherche({ surChoix, surNouveau }) {
       actif = false;
       clearTimeout(t);
     };
-  }, [q, specialiteIds]);
+  }, [q, specialiteIds, rechercheActive]);
 
   return (
     <div className="space-y-4">
@@ -54,7 +63,15 @@ function Recherche({ surChoix, surNouveau }) {
         />
       </div>
       <Alerte>{erreur}</Alerte>
-      {!resultat && !erreur && <Chargement texte="Recherche…" />}
+      {!rechercheActive && (
+        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <p>Tapez le nom d’un médecin ou choisissez une spécialité pour commencer.</p>
+          <button type="button" onClick={() => setTous(true)} className="mt-1 font-medium text-marque-700 hover:underline">
+            Afficher tous les médecins
+          </button>
+        </div>
+      )}
+      {rechercheActive && !resultat && !erreur && <Chargement texte="Recherche…" />}
       {resultat && resultat.medecins.length === 0 && (
         <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">Aucun médecin ne correspond à votre recherche dans la base.</p>
       )}
@@ -241,7 +258,7 @@ function Details({ medecin, nouveau, surRetour, surReussite, surDoublon }) {
   );
 }
 
-export default function PriseRendezVous({ medecinInitialId, surCree }) {
+export default function PriseRendezVous({ medecinInitialId, surCree, surFermer }) {
   const [etape, setEtape] = useState(medecinInitialId ? 'chargement' : 'recherche');
   const [medecin, setMedecin] = useState(null);
   const [nouveau, setNouveau] = useState(null); // { fiche, specialites, homonymeConfirme }
@@ -283,7 +300,16 @@ export default function PriseRendezVous({ medecinInitialId, surCree }) {
   }
 
   return (
-    <Carte titre="Prendre un rendez-vous">
+    <Carte
+      titre="Prendre un rendez-vous"
+      action={
+        surFermer && (
+          <Bouton variante="secondaire" onClick={surFermer}>
+            Fermer
+          </Bouton>
+        )
+      }
+    >
       <div className="space-y-4">
         <Alerte type="succes">{succes}</Alerte>
         <Alerte>{erreur}</Alerte>

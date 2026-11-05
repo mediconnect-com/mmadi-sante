@@ -38,7 +38,7 @@ async function main() {
       } catch (e) {
         console.error(
           '[démarrage] ERREUR pendant la mise à jour de la base : ' + e.message + '\n' +
-            '  -> Exécutez database/mise_a_jour_v2.sql puis database/mise_a_jour_v3.sql dans l\'éditeur SQL de Supabase, puis relancez.'
+            '  -> Exécutez database/mise_a_jour_v2.sql, mise_a_jour_v3.sql puis mise_a_jour_v4.sql dans l\'éditeur SQL de Supabase, puis relancez.'
         );
         process.exit(1);
       }

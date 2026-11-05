@@ -5,6 +5,8 @@ import Navbar from '@/components/Navbar';
 export const metadata = {
   title: 'MmadiSanté',
   description: 'Votre dossier de santé en ligne : informations personnelles et documents médicaux.',
+  // Le lien de réinitialisation du mot de passe contient un jeton dans son adresse : elle n'est jamais transmise en référent.
+  referrer: 'no-referrer',
 };
 
 export const viewport = {

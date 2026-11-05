@@ -10,8 +10,9 @@ export default function Navbar() {
 
   const liens = [];
   if (utilisateur?.role === 'PATIENT') {
-    liens.push({ href: '/profil/', texte: 'Mon dossier' });
-    liens.push({ href: '/rendez-vous/', texte: 'Rendez-vous' });
+    liens.push({ href: '/profil/', texte: 'Mes informations' });
+    liens.push({ href: '/mes-medecins/', texte: 'Mes médecins' });
+    liens.push({ href: '/rendez-vous/', texte: 'Mes rendez-vous' });
   }
   if (utilisateur?.role === 'MEDECIN') {
     liens.push({ href: '/medecin/', texte: 'Mes patients' });

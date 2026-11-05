@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { chiffrer } = require('../lib/chiffrement');
 const { asyncHandler, ErreurHttp } = require('../lib/erreurs');
-const { schemaCreationUtilisateur, schemaAttribution, schemaMajMedecin, schemaReinitialisationMotDePasse, idValide } = require('../lib/validation');
+const { schemaCreationUtilisateur, schemaAttribution, schemaMajMedecin, idValide } = require('../lib/validation');
 const { utilisateurPublic, INCLURE_SPECIALITES, selectDocumentSansContenu } = require('../lib/serialiser');
 const { remplacerSpecialites } = require('../lib/medecins');
 const { authentifier, exigerRole } = require('../middleware/auth');
@@ -121,25 +121,6 @@ router.put(
       return tx.utilisateur.update({ where: { id }, data, include: INCLURE_SPECIALITES });
     });
     res.json({ utilisateur: utilisateurPublic(u) });
-  })
-);
-
-// PUT /api/v1/admin/utilisateurs/:id/mot-de-passe — l'administrateur définit un nouveau mot de passe (oubli).
-// Un mot de passe n'est jamais lisible (seul son hash est stocké) : on le remplace, on ne le consulte pas.
-router.put(
-  '/utilisateurs/:id/mot-de-passe',
-  asyncHandler(async (req, res) => {
-    const id = idValide(req.params.id);
-    if (id === req.utilisateur.id) {
-      throw new ErreurHttp(400, 'Pour votre propre compte, utilisez « Changer mon mot de passe » dans Mon profil.');
-    }
-    const d = schemaReinitialisationMotDePasse.parse(req.body);
-    const cible = await prisma.utilisateur.findUnique({ where: { id }, select: { id: true, role: true, email: true, sansCompte: true } });
-    if (!cible) throw new ErreurHttp(404, 'Utilisateur introuvable.');
-    if (cible.sansCompte) throw new ErreurHttp(400, "Cette fiche médecin n'a pas de compte de connexion : aucun mot de passe à modifier.");
-    await prisma.utilisateur.update({ where: { id }, data: { motDePasseHash: await bcrypt.hash(d.nouveauMotDePasse, 12) } });
-    console.log(`[ADMIN] ${req.utilisateur.id} a réinitialisé le mot de passe du compte ${cible.email} (${cible.role})`);
-    res.json({ message: 'Mot de passe modifié. Communiquez-le à l’utilisateur par un canal sûr.' });
   })
 );
 

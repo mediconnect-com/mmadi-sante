@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { appelApi } from '@/lib/api';
-import { STATUTS_RDV, formaterDateHeure, nomComplet } from '@/lib/constantes';
+import { STATUTS_RDV, formaterDate, formaterDateHeure, nomComplet } from '@/lib/constantes';
 import { Alerte, Bouton } from './ui';
 import CarteMedecin from './CarteMedecin';
 
@@ -12,9 +12,26 @@ function BadgeStatut({ statut }) {
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${s.style}`}>{s.libelle}</span>;
 }
 
-function LigneRendezVous({ rdv, role, surChangement, surErreur }) {
+/** Commentaire / pathologies rédigés par le médecin à propos de ce rendez-vous (lecture seule pour le patient). */
+function CommentaireRdv({ commentaire }) {
+  return (
+    <div className="mt-3 rounded-lg border border-marque-100 bg-marque-50/50 px-3 py-2 text-sm text-slate-800">
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+        Commentaire de {commentaire.medecinNom} · {formaterDate(commentaire.modifieLe || commentaire.creeLe)}
+      </p>
+      {commentaire.pathologies && (
+        <p>
+          <span className="font-medium">Pathologies :</span> {commentaire.pathologies}
+        </p>
+      )}
+      {commentaire.commentaire && <p className="whitespace-pre-line">{commentaire.commentaire}</p>}
+    </div>
+  );
+}
+
+function LigneRendezVous({ rdv, role, commentaire, surChangement, surErreur }) {
   const [enCours, setEnCours] = useState(false);
-  const actif = rdv.statut === 'DEMANDE' || rdv.statut === 'CONFIRME';
+  const actif = (rdv.statut === 'DEMANDE' || rdv.statut === 'CONFIRME') && new Date(rdv.dateHeure).getTime() >= Date.now() - 3600000; // un rendez-vous passé ne s'annule plus
 
   async function changer(statut, question) {
     if (question && !window.confirm(question)) return;
@@ -111,23 +128,26 @@ function LigneRendezVous({ rdv, role, surChangement, surErreur }) {
           Ce médecin n&apos;utilise pas MmadiSanté : contactez-le au {rdv.medecin.telephone || 'numéro indiqué'} pour confirmer le rendez-vous.
         </p>
       )}
+      {role === 'PATIENT' && commentaire && <CommentaireRdv commentaire={commentaire} />}
       {boutons.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{boutons}</div>}
     </li>
   );
 }
 
-export default function ListeRendezVous({ rendezVous, role, surChangement }) {
+export default function ListeRendezVous({ rendezVous, role, commentaires = {}, surChangement }) {
   const [erreur, setErreur] = useState('');
+  const [passesVisibles, setPassesVisibles] = useState(true);
   const maintenant = Date.now();
-  const aVenir = rendezVous.filter((r) => (r.statut === 'DEMANDE' || r.statut === 'CONFIRME') && new Date(r.dateHeure).getTime() >= maintenant - 3600000);
-  const passes = rendezVous
-    .filter((r) => !aVenir.includes(r))
-    .sort((a, b) => new Date(b.dateHeure) - new Date(a.dateHeure));
+  // « En cours » : demandes et rendez-vous confirmés, pas encore passés (les plus proches d'abord).
+  const enCours = rendezVous
+    .filter((r) => (r.statut === 'DEMANDE' || r.statut === 'CONFIRME') && new Date(r.dateHeure).getTime() >= maintenant - 3600000)
+    .sort((a, b) => new Date(a.dateHeure) - new Date(b.dateHeure));
+  const passes = rendezVous.filter((r) => !enCours.includes(r)).sort((a, b) => new Date(b.dateHeure) - new Date(a.dateHeure));
 
   const rendu = (liste) => (
     <ul className="space-y-3">
       {liste.map((r) => (
-        <LigneRendezVous key={r.id} rdv={r} role={role} surChangement={surChangement} surErreur={setErreur} />
+        <LigneRendezVous key={r.id} rdv={r} role={role} commentaire={commentaires[r.id]} surChangement={surChangement} surErreur={setErreur} />
       ))}
     </ul>
   );
@@ -136,13 +156,23 @@ export default function ListeRendezVous({ rendezVous, role, surChangement }) {
     <div className="space-y-6">
       <Alerte>{erreur}</Alerte>
       <div>
-        <h3 className="mb-3 text-base font-semibold text-slate-800">À venir ({aVenir.length})</h3>
-        {aVenir.length === 0 ? <p className="text-sm text-slate-500">Aucun rendez-vous à venir.</p> : rendu(aVenir)}
+        <h3 className="mb-3 text-base font-semibold text-slate-800">En cours et à venir ({enCours.length})</h3>
+        {enCours.length === 0 ? <p className="text-sm text-slate-500">Aucun rendez-vous en cours.</p> : rendu(enCours)}
       </div>
       {passes.length > 0 && (
         <div>
-          <h3 className="mb-3 text-base font-semibold text-slate-800">Passés, refusés ou annulés ({passes.length})</h3>
-          {rendu(passes)}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-slate-800">Passés, refusés ou annulés ({passes.length})</h3>
+            <button
+              type="button"
+              onClick={() => setPassesVisibles((v) => !v)}
+              aria-expanded={passesVisibles}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {passesVisibles ? 'Masquer' : 'Afficher'}
+            </button>
+          </div>
+          {passesVisibles && rendu(passes)}
         </div>
       )}
     </div>

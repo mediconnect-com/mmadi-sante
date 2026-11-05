@@ -47,6 +47,7 @@ mmadi-sante/
 │   ├── schema.sql           ★ création des tables en SQL pur (éditeur SQL Supabase)
 │   ├── mise_a_jour_v2.sql   ★ mise à jour d'une base déjà en service (spécialités, rendez-vous)
 │   ├── mise_a_jour_v3.sql   ★ mise à jour V3 (commentaires de pathologies, documents déposés par un médecin)
+│   ├── mise_a_jour_v4.sql   ★ mise à jour V4 (« mot de passe oublié » : table des liens de réinitialisation)
 │   ├── seed_demo.sql        ★ comptes de démonstration en SQL pur
 │   └── supprimer_comptes_demo.sql   ★ retire les 4 comptes de démonstration (et eux seuls)
 ├── scripts/                 ★ scripts guidés pour non-développeurs (voir ci-dessous)
@@ -54,6 +55,21 @@ mmadi-sante/
 ├── docker-compose.yml       PostgreSQL de test en local (facultatif)
 └── README.md
 ```
+
+---
+
+## Nouveautés de la version 4
+
+| Évolution | Où la trouver |
+|---|---|
+| **« Mon dossier » du patient séparé en trois menus** : *Mes informations* (informations personnelles, documents, ajout de documents, changement de mot de passe), *Mes médecins* et *Mes rendez-vous*. Le médecin et l'administrateur gardent *Mon profil* | menu du patient |
+| **Mes rendez-vous** : les rendez-vous **en cours et à venir** s'affichent en premier, puis les rendez-vous **passés, refusés ou annulés**, que l'on peut **masquer / afficher**. Sous chaque rendez-vous, le patient lit le **commentaire et les pathologies** saisis par son médecin à cette occasion (un commentaire non rattaché à un rendez-vous apparaît dans « Autres commentaires »). Un rendez-vous passé ne propose plus « Annuler » | *Mes rendez-vous* (patient) |
+| **Prise de rendez-vous à la demande** : aucun médecin n'est affiché d'office. Le patient clique sur « Prendre un rendez-vous », puis cherche par nom ou spécialité (ou clique sur « Afficher tous les médecins »). « Prendre rendez-vous » depuis *Mes médecins* présélectionne le médecin | *Mes rendez-vous* (patient) |
+| **« Mot de passe oublié » à la connexion**, avec **e-mail contenant un lien** : le lien ouvre une page où l'on saisit et confirme le nouveau mot de passe, enregistré (haché) en base. Le lien est **valable 1 heure, à usage unique** ; une nouvelle demande annule la précédente ; la réponse est identique que l'adresse existe ou non ; un e-mail de confirmation prévient l'utilisateur de la modification. Le jeton n'est **jamais stocké** (seule son empreinte SHA-256 l'est). *La réinitialisation par l'administrateur depuis la fiche d'un utilisateur est supprimée.* Changer son mot de passe en le connaissant reste possible dans *Mes informations* / *Mon profil* | page de connexion |
+
+**Envoi des e-mails : à configurer pour le déploiement.** L'hébergement **gratuit de Render bloque les ports SMTP** (25, 465, 587) : l'API envoie donc ses e-mails par l'**API HTTPS de Resend** (<https://resend.com>, offre gratuite). Pour activer l'envoi, ajoutez dans Render → service `mmadi-sante-api` → *Environment* : `RESEND_API_KEY` (clé créée dans Resend) et `MAIL_FROM`. Avec l'expéditeur par défaut (`onboarding@resend.dev`), Resend n'écrit **qu'à l'adresse de votre propre compte Resend** : pour écrire à de vrais utilisateurs, **vérifiez un domaine** dans Resend et utilisez une adresse de ce domaine dans `MAIL_FROM`. Sans `RESEND_API_KEY`, la demande est acceptée mais **aucun e-mail ne part** (en local, le lien s'affiche dans la console de l'API, pratique pour tester).
+
+**Mise à jour d'une base en service.** Au démarrage, l'API applique la migration `0005_mot_de_passe_oublie` (rejouable sans risque : crée la table `reinitialisations_mot_de_passe` et active la protection RLS de Supabase, qui manquait encore sur `commentaires_patients`). En cas d'erreur dans les logs, collez `database/mise_a_jour_v4.sql` dans l'éditeur SQL de Supabase.
 
 ---
 
@@ -67,7 +83,7 @@ mmadi-sante/
 | **Mon profil en lecture** : les informations s'affichent en lecture ; « Modifier mes informations » ouvre le formulaire ; « Enregistrer » ou « Annuler » ramène à la lecture. Le numéro de carte d'identité est masqué en lecture | *Mon profil* / *Mon dossier* (tous les profils) |
 | **Commentaires et pathologies, liés à un rendez-vous** : un médecin ne peut commenter qu'un **rendez-vous avec son patient, confirmé et déjà commencé**, un seul commentaire par rendez-vous (modifiable, supprimable par son auteur). Le patient les lit dans *Mon dossier* avec le rendez-vous concerné ; l'administrateur les voit ; **un confrère ne les voit pas** | fiche du patient et détail du rendez-vous (médecin) · *Mon dossier* (patient) |
 | **Dépôt de documents par le médecin** dans la fiche de ses patients (PDF, JPG, PNG). Le patient les voit avec la date et le nom du médecin. **Le médecin ne peut ensuite ni les rouvrir ni voir les documents du patient** : il garde seulement un accusé de dépôt (nom, date, sans contenu) | fiche du patient (médecin) · *Mon dossier* (patient) |
-| **Administrateur : changer le mot de passe d'un utilisateur** (oubli). Un mot de passe n'est jamais lisible (il est stocké chiffré) : l'administrateur en définit un nouveau (8 caractères minimum, lettre + chiffre) et le communique à l'utilisateur, qui peut ensuite le changer dans *Mon profil*. Impossible pour son propre compte (utiliser *Mon profil*) et pour une fiche médecin sans compte de connexion | fiche d'un utilisateur, carte *Mot de passe* (administrateur) |
+| ~~Administrateur : changer le mot de passe d'un utilisateur~~ | **remplacé en V4** par « Mot de passe oublié » à la connexion (voir ci-dessous) |
 | **Administrateur : accès par clic à tous les rendez-vous** : la tuile *Rendez-vous* de l'accueil administrateur ouvre la liste, et « Ouvrir » affiche le détail d'un rendez-vous (patient, médecin, statut, actions, liens vers les fiches). Disponible aussi pour le patient et le médecin concernés | accueil administrateur · *Rendez-vous* |
 
 **Confidentialité des documents (V3).** Les documents d'un patient (déposés par lui ou par un médecin) ne sont accessibles qu'au **patient** et à l'**administrateur** ; l'API répond 403 à un médecin, même attribué, même pour son propre dépôt.
@@ -91,7 +107,7 @@ L'administrateur la gère dans le menu **Spécialités** : ajouter, modifier, **
 
 Un rendez-vous a un statut : *en attente*, *confirmé*, *refusé*, *annulé*. Le médecin confirme ou refuse ; le patient annule les siens ; l'administrateur voit tout. Si le médecin n'a pas de compte, le patient est invité à le contacter par téléphone.
 
-**« Mes médecins »** (page *Mon dossier* du patient) affiche pour chaque médecin associé : nom complet, spécialités, **téléphone bien visible (appel en un clic)** et adresse professionnelle (lien carte), avec « Prendre rendez-vous » et « Retirer ». Toutes ces informations sont **relues dans la fiche en base à chaque affichage** : modifier une fiche la met à jour partout, sans ressaisie. Côté administrateur, choisir un médecin à attribuer à un patient affiche d'abord sa fiche complète.
+**« Mes médecins »** (menu du patient, depuis la V4) affiche pour chaque médecin associé : nom complet, spécialités, **téléphone bien visible (appel en un clic)** et adresse professionnelle (lien carte), avec « Prendre rendez-vous » et « Retirer ». Toutes ces informations sont **relues dans la fiche en base à chaque affichage** : modifier une fiche la met à jour partout, sans ressaisie. Côté administrateur, choisir un médecin à attribuer à un patient affiche d'abord sa fiche complète.
 
 ---
 
@@ -305,8 +321,8 @@ Aucun fichier de configuration n'est fourni pour Railway. Le principe reste le m
 1. Remplacez les fichiers du projet par ceux de la nouvelle version (**sans** écraser vos fichiers `.env`).
 2. Envoyez-les sur GitHub (`git add -A`, `git commit -m "Version 3"`, `git push origin main`) : Render redéploie l'API et le site automatiquement (`autoDeploy`).
 3. **La base de données se met à jour toute seule** au démarrage de l'API (V3 : table `commentaires_patients` et colonnes `depose_par_medecin_id` / `depose_par_nom` des documents ; V2 : création des tables `specialites`, `medecin_specialites` et `rendez_vous`, ajout des colonnes de la fiche médecin et de la liste des 59 spécialités. Cette mise à jour **n'efface et ne modifie aucune donnée existante** (comptes, documents, attributions) et peut être rejouée sans risque. Dans les logs de l'API, vous verrez soit `prisma migrate deploy` réussir, soit `Mise à jour de la base appliquée : 0003_specialites_rendez_vous`.
-4. Si les logs affichent « ERREUR pendant la mise à jour de la base », collez `database/mise_a_jour_v2.sql` puis `database/mise_a_jour_v3.sql` dans l'éditeur SQL de Supabase (même effet, à la main ; si votre base est déjà en V2, seul le fichier V3 est nécessaire), puis relancez le déploiement.
-5. Aucune variable d'environnement n'est à ajouter. Vous pouvez supprimer `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` du service `mmadi-sante-web` : elle n'est plus utilisée.
+4. Si les logs affichent « ERREUR pendant la mise à jour de la base », collez `database/mise_a_jour_v2.sql`, puis `mise_a_jour_v3.sql`, puis `mise_a_jour_v4.sql` dans l'éditeur SQL de Supabase (même effet, à la main ; collez seulement ceux qui manquent à votre base), puis relancez le déploiement.
+5. **V4 : pour que le lien « mot de passe oublié » parte par e-mail**, ajoutez `RESEND_API_KEY` et `MAIL_FROM` à l'API (voir « Nouveautés de la version 4 »). Sans cela, tout le reste fonctionne mais aucun e-mail n'est envoyé. Vous pouvez supprimer `NEXT_PUBLIC_AFFICHER_COMPTES_DEMO` du service `mmadi-sante-web` : elle n'est plus utilisée.
 
 > Si vous avez défini `SKIP_MIGRATE=true` sur l'API, retirez-le pour que la mise à jour s'applique.
 
@@ -326,6 +342,10 @@ Chaque variable est documentée en détail dans `backend/.env.example` et `front
 | `JWT_EXPIRES_IN` | API | durée d'une connexion (`8h` par défaut) |
 | `MAX_FILE_MB` | API | taille maximale par fichier (5 par défaut) |
 | `NODE_ENV` | API | `production` sur l'hébergeur |
+| `RESEND_API_KEY` | API | clé de l'API d'e-mail Resend (lien « mot de passe oublié »). Sans elle : aucun e-mail envoyé |
+| `MAIL_FROM` | API | expéditeur des e-mails (domaine vérifié dans Resend) |
+| `APP_URL` | API | adresse du site dans les liens des e-mails (par défaut : la première adresse de `FRONTEND_URL`) |
+| `RESET_LINK_MINUTES` | API | validité du lien de réinitialisation (60 par défaut) |
 | `SKIP_MIGRATE` | API | `true` pour ne pas lancer les migrations au démarrage |
 | `PRISMA_ADAPTER_PG` | API | mode « sans binaire » (avancé, voir plus bas) |
 | `NEXT_PUBLIC_API_URL` | site | adresse de l'API **avec `/api/v1`** (figée au build) |
@@ -354,6 +374,9 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `GET /sante` | public | état de l'API et de la base |
 | `POST /auth/inscription` | public | crée un compte **patient** |
 | `POST /auth/connexion` | public | connexion, renvoie le jeton |
+| `POST /auth/mot-de-passe-oublie` | public | demande l'envoi du lien de réinitialisation (réponse identique si l'e-mail est inconnu ; 5 demandes / heure / IP) |
+| `POST /auth/mot-de-passe-oublie/verifier` | public | le lien reçu est-il encore valable ? |
+| `POST /auth/reinitialiser-mot-de-passe` | public (jeton du lien) | enregistre le nouveau mot de passe ; lien à usage unique |
 | `GET /auth/moi` | connecté | compte courant |
 | `GET` / `PUT /profil` | connecté | lire / modifier **ses** informations |
 | `PUT /profil/mot-de-passe` | connecté | changer son mot de passe |
@@ -379,7 +402,6 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `PUT /admin/medecins/:id` | admin | modifier la fiche d'un médecin |
 | `GET /admin/statistiques`, `/admin/utilisateurs`, `/admin/documents`, `/admin/attributions` | admin | consultation globale |
 | `POST /admin/utilisateurs` | admin | créer un compte de n'importe quel profil (médecin : spécialités, adresse pro, option « sans compte ») |
-| `PUT /admin/utilisateurs/:id/mot-de-passe` | admin | définir un nouveau mot de passe pour un utilisateur (V3) |
 | `DELETE /admin/utilisateurs/:id` | admin | supprimer un utilisateur (et ses documents) |
 | `POST` / `DELETE /admin/attributions` | admin | attribuer / retirer un patient d'un médecin |
 

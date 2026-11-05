@@ -13,7 +13,7 @@
     "build": "prisma generate",
     "migrer": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
-    "test": "node --test --test-concurrency=1 tests/acces.test.js tests/specialites-rdv.test.js tests/v3.test.js",
+    "test": "node --test --test-concurrency=1 tests/acces.test.js tests/specialites-rdv.test.js tests/v3.test.js tests/mot-de-passe-oublie.test.js",
     "supprimer-demo": "node prisma/supprimer-demo.js"
   },
   "dependencies": {

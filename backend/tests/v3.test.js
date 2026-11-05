@@ -444,32 +444,11 @@ describe('V3 — détail d\'un rendez-vous et statistiques administrateur', () =
   });
 });
 
-describe('V3 — réinitialisation du mot de passe par l\'administrateur', () => {
-  it('l\'administrateur définit un nouveau mot de passe ; l\'ancien ne marche plus, le nouveau oui', async () => {
+describe('Mot de passe : plus de réinitialisation depuis la fiche utilisateur', () => {
+  it('l\'ancienne route administrateur n\'existe plus (404) : tout passe par « Mot de passe oublié » à la connexion', async () => {
     const p = await creerPatient('mdp');
     const r = await appel('PUT', `/admin/utilisateurs/${p.id}/mot-de-passe`, { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'Nouveau2026x' } });
-    assert.equal(r.statut, 200);
-    assert.equal((await appel('POST', '/auth/connexion', { json: { email: p.email, motDePasse: MDP } })).statut, 401);
-    assert.equal((await appel('POST', '/auth/connexion', { json: { email: p.email, motDePasse: 'Nouveau2026x' } })).statut, 200);
-  });
-
-  it('refus : mot de passe faible (400), non-administrateur (403), sans jeton (401), soi-même (400), inconnu (404)', async () => {
-    const p = await creerPatient('mdp2');
-    const url = `/admin/utilisateurs/${p.id}/mot-de-passe`;
-    assert.equal((await appel('PUT', url, { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'court1' } })).statut, 400);
-    assert.equal((await appel('PUT', url, { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'sansaucunchiffre' } })).statut, 400);
-    assert.equal((await appel('PUT', url, { jeton: J.medecinDemo.jeton, json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 403);
-    assert.equal((await appel('PUT', url, { jeton: J.paul.jeton, json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 403);
-    assert.equal((await appel('PUT', url, { json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 401);
-    assert.equal((await appel('PUT', `/admin/utilisateurs/${J.admin.id}/mot-de-passe`, { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 400);
-    assert.equal((await appel('PUT', '/admin/utilisateurs/00000000-0000-4000-8000-000000000000/mot-de-passe', { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 404);
+    assert.equal(r.statut, 404);
     assert.equal((await appel('POST', '/auth/connexion', { json: { email: p.email, motDePasse: MDP } })).statut, 200); // inchangé
-  });
-
-  it('refus (400) pour une fiche médecin sans compte de connexion', async () => {
-    const r = await appel('POST', '/admin/utilisateurs', { jeton: J.admin.jeton, json: { role: 'MEDECIN', sansCompte: true, prenom: 'Sans', nom: 'Compte' + suffixe, telephone: '+2693000000' } });
-    assert.equal(r.statut, 201, JSON.stringify(r.donnees));
-    idsUtilisateurs.push(r.donnees.utilisateur.id);
-    assert.equal((await appel('PUT', `/admin/utilisateurs/${r.donnees.utilisateur.id}/mot-de-passe`, { jeton: J.admin.jeton, json: { nouveauMotDePasse: 'Valide2026x' } })).statut, 400);
   });
 });

@@ -113,8 +113,15 @@ const schemaChangementMotDePasse = z.object({
   nouveauMotDePasse: motDePasse,
 });
 
-const schemaReinitialisationMotDePasse = z.object({
+const schemaMotDePasseOublie = z.object({ email });
+
+const schemaNouveauMotDePasse = z.object({
+  jeton: z.string({ required_error: 'Le lien est invalide.' }).trim().min(20, 'Le lien est invalide.').max(200, 'Le lien est invalide.'),
   nouveauMotDePasse: motDePasse,
+});
+
+const schemaVerificationJeton = z.object({
+  jeton: z.string({ required_error: 'Le lien est invalide.' }).trim().min(20, 'Le lien est invalide.').max(200, 'Le lien est invalide.'),
 });
 
 const schemaAttribution = z.object({
@@ -214,7 +221,9 @@ module.exports = {
   schemaConnexion,
   schemaMajProfil,
   schemaChangementMotDePasse,
-  schemaReinitialisationMotDePasse,
+  schemaMotDePasseOublie,
+  schemaNouveauMotDePasse,
+  schemaVerificationJeton,
   schemaAttribution,
   schemaDocument,
   schemaCommentaire,

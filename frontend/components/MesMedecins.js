@@ -39,7 +39,7 @@ export default function MesMedecins() {
     <Carte
       titre={`Mes médecins${medecins ? ` (${medecins.length})` : ''}`}
       action={
-        <Link href="/rendez-vous/" className="rounded-lg bg-marque-600 px-4 py-2 text-sm font-medium text-white hover:bg-marque-700">
+        <Link href="/rendez-vous/?nouveau=1" className="rounded-lg bg-marque-600 px-4 py-2 text-sm font-medium text-white hover:bg-marque-700">
           Prendre rendez-vous
         </Link>
       }

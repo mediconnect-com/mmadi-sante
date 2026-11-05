@@ -50,6 +50,9 @@ services:
         value: 8h
       - key: MAX_FILE_MB
         value: "5"
+      # E-mails « mot de passe oublié » : AJOUTEZ ensuite, dans Render → mmadi-sante-api → Environment,
+      #   RESEND_API_KEY (clé de https://resend.com) et MAIL_FROM (expéditeur vérifié). Voir backend/.env.example.
+      #   Le SMTP est bloqué sur le plan gratuit de Render : l'envoi passe par l'API HTTPS de Resend.
 
   # ---------------------------------------------------------------------------
   #  2) Le site web (Next.js, export statique → site statique gratuit)

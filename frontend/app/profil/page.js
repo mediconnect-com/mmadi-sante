@@ -1,5 +1,6 @@
 'use client';
-// « Mon dossier » : informations personnelles, mot de passe et documents du compte connecté.
+// Patient : « Mes informations » (informations personnelles + documents). Ses médecins et ses rendez-vous (avec les
+// commentaires associés) ont chacun leur propre menu. Médecin et administrateur : « Mon profil ».
 import { useCallback, useEffect, useState } from 'react';
 import { appelApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -7,8 +8,6 @@ import Protege from '@/components/Protege';
 import FormulaireProfil from '@/components/FormulaireProfil';
 import TeleversementDocuments from '@/components/TeleversementDocuments';
 import ListeDocuments from '@/components/ListeDocuments';
-import MesMedecins from '@/components/MesMedecins';
-import CommentairesPatient from '@/components/CommentairesPatient';
 import { Alerte, Bouton, Carte, Champ, Chargement, Page } from '@/components/ui';
 
 function ChangerMotDePasse() {
@@ -53,7 +52,6 @@ function ChangerMotDePasse() {
 function Contenu() {
   const { utilisateur, setUtilisateur } = useAuth();
   const [documents, setDocuments] = useState(null);
-  const [commentaires, setCommentaires] = useState([]);
   const [erreur, setErreur] = useState('');
 
   const chargerDocuments = useCallback(async () => {
@@ -69,27 +67,14 @@ function Contenu() {
     chargerDocuments();
   }, [chargerDocuments]);
 
-  // V3 : un patient lit les commentaires et pathologies que ses médecins ont saisis à son sujet.
-  useEffect(() => {
-    if (utilisateur.role !== 'PATIENT') return;
-    appelApi('/profil/commentaires')
-      .then((r) => setCommentaires(r.commentaires))
-      .catch((e) => setErreur(e.message));
-  }, [utilisateur.role]);
-
   return (
-    <Page titre="Mon dossier" sousTitre="Vos informations personnelles et vos documents médicaux.">
-      {utilisateur.role === 'PATIENT' && <MesMedecins />}
-
-      <Carte titre="Mes informations">
+    <Page
+      titre={utilisateur.role === 'PATIENT' ? 'Mes informations' : 'Mon profil'}
+      sousTitre={utilisateur.role === 'PATIENT' ? 'Vos informations personnelles et vos documents médicaux.' : 'Vos informations personnelles et la sécurité de votre compte.'}
+    >
+      <Carte titre="Informations personnelles">
         <FormulaireProfil utilisateur={utilisateur} surMaj={setUtilisateur} />
       </Carte>
-
-      {utilisateur.role === 'PATIENT' && (
-        <Carte titre={`Commentaires de mes médecins (${commentaires.length})`}>
-          <CommentairesPatient commentaires={commentaires} mode="lecture" vide="Vos médecins n’ont pas encore saisi de commentaire à votre sujet." />
-        </Carte>
-      )}
 
       <Carte titre="Ajouter des documents">
         <TeleversementDocuments surTermine={chargerDocuments} />

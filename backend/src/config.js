@@ -43,7 +43,19 @@ if (production && origines.length === 0) {
 }
 if (!production && origines.length === 0) origines.push('http://localhost:3000');
 
+// Envoi d'e-mails (lien « mot de passe oublié »). L'hébergement gratuit de Render bloque les ports SMTP :
+// l'envoi passe donc par l'API HTTPS du service Resend (https://resend.com). Sans clé, rien n'est envoyé :
+// en développement le message est affiché dans la console de l'API, en production une erreur est journalisée.
+const courriel = {
+  cleResend: (env.RESEND_API_KEY || '').trim(),
+  expediteur: (env.MAIL_FROM || 'MmadiSanté <onboarding@resend.dev>').trim(),
+  // Adresse du site web utilisée dans les liens (par défaut : la première de FRONTEND_URL).
+  urlSite: (env.APP_URL || origines[0]).trim().replace(/\/+$/, ''),
+  dureeLienMinutes: Number(env.RESET_LINK_MINUTES) || 60,
+};
+
 module.exports = {
+  courriel,
   production,
   port: Number(env.PORT) || 4000,
   jwtSecret,
