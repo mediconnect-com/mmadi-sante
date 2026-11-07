@@ -9,14 +9,14 @@ const { authentifier } = require('../middleware/auth');
 const router = express.Router();
 router.use(authentifier);
 
-// GET /api/v1/documents/:id — contenu du fichier (propriétaire ou admin ; JAMAIS un médecin, V3)
+// GET /api/v1/documents/:id — contenu du fichier (propriétaire, admin, ou médecin pour ses PROPRES dépôts, V4)
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = idValide(req.params.id);
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) throw new ErreurHttp(404, 'Document introuvable.');
-    exigerAccesDocument(req.utilisateur, doc.proprietaireId);
+    exigerAccesDocument(req.utilisateur, doc);
 
     const contenu = Buffer.from(doc.contenu);
     res.setHeader('Content-Type', doc.typeMime);
@@ -29,7 +29,7 @@ router.get(
   })
 );
 
-// DELETE /api/v1/documents/:id — le propriétaire ou l'administrateur (jamais le médecin : lecture seule)
+// DELETE /api/v1/documents/:id — le propriétaire, l'administrateur, ou le médecin qui a déposé le document
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {

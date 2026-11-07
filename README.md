@@ -7,7 +7,7 @@ Application web pour saisir et consulter des informations de santé : **nom, pr�
 | Profil | Ce qu'il peut faire |
 |---|---|
 | **PATIENT** | Créer son compte, saisir et modifier **ses** informations, envoyer et supprimer **ses** documents, retrouver **ses médecins** (nom, spécialité, téléphone, adresse), **rechercher un médecin** et **prendre rendez-vous**. Ne voit jamais les données d'un autre. |
-| **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations des patients **qui lui sont attribués** (jamais leurs documents), rédiger un commentaire de pathologies à l'issue d'un rendez-vous et déposer des documents dans leur fiche. |
+| **MÉDECIN** | Tenir sa **fiche professionnelle** (spécialités, adresse), traiter les demandes de rendez-vous, consulter (lecture seule) les informations des patients **qui lui sont attribués** (jamais les documents du patient, seulement ceux qu'ils ont eux-mêmes déposés), rédiger un commentaire de pathologies à l'issue d'un rendez-vous et déposer des documents dans leur fiche. |
 | **ADMINISTRATEUR** | Tout consulter, supprimer des documents et des utilisateurs, créer des comptes et fiches médecins de tout profil, gérer la liste des **spécialités**, attribuer les patients aux médecins. |
 
 Ces règles sont appliquées **côté serveur, sur chaque route de l'API** (pas seulement dans l'interface) et vérifiées par 90 tests automatisés.
@@ -82,7 +82,7 @@ mmadi-sante/
 | **Choisir un médecin par spécialité** : filtre « spécialité » (avec l'effectif de chaque spécialité) avant la liste des médecins à attribuer | fiche d'un patient, côté administrateur (*Médecins attribués*) |
 | **Mon profil en lecture** : les informations s'affichent en lecture ; « Modifier mes informations » ouvre le formulaire ; « Enregistrer » ou « Annuler » ramène à la lecture. Le numéro de carte d'identité est masqué en lecture | *Mon profil* / *Mon dossier* (tous les profils) |
 | **Commentaires et pathologies, liés à un rendez-vous** : un médecin ne peut commenter qu'un **rendez-vous avec son patient, confirmé et déjà commencé**, un seul commentaire par rendez-vous (modifiable, supprimable par son auteur). Le patient les lit dans *Mon dossier* avec le rendez-vous concerné ; l'administrateur les voit ; **un confrère ne les voit pas** | fiche du patient et détail du rendez-vous (médecin) · *Mon dossier* (patient) |
-| **Dépôt de documents par le médecin** dans la fiche de ses patients (PDF, JPG, PNG). Le patient les voit avec la date et le nom du médecin. **Le médecin ne peut ensuite ni les rouvrir ni voir les documents du patient** : il garde seulement un accusé de dépôt (nom, date, sans contenu) | fiche du patient (médecin) · *Mon dossier* (patient) |
+| **Dépôt de documents par le médecin** dans la fiche de ses patients (PDF, JPG, PNG). Le patient les voit avec la date et le nom du médecin. **Le médecin peut ensuite les rouvrir, les télécharger et les retirer** (V4), comme le patient ; il ne voit jamais les documents du patient ni ceux d'un confrère | fiche du patient (médecin) · *Mon dossier* (patient) |
 | ~~Administrateur : changer le mot de passe d'un utilisateur~~ | **remplacé en V4** par « Mot de passe oublié » à la connexion (voir ci-dessous) |
 | **Administrateur : accès par clic à tous les rendez-vous** : la tuile *Rendez-vous* de l'accueil administrateur ouvre la liste, et « Ouvrir » affiche le détail d'un rendez-vous (patient, médecin, statut, actions, liens vers les fiches). Disponible aussi pour le patient et le médecin concernés | accueil administrateur · *Rendez-vous* |
 
@@ -381,13 +381,13 @@ Toutes sous `/api/v1`. Authentification par l'en-tête `Authorization: Bearer <j
 | `GET` / `PUT /profil` | connecté | lire / modifier **ses** informations |
 | `PUT /profil/mot-de-passe` | connecté | changer son mot de passe |
 | `GET` / `POST /profil/documents` | connecté | lister / envoyer **ses** documents (champ `fichiers`, 5 max) |
-| `GET /documents/:id` | propriétaire, admin (jamais un médecin) | télécharger un document |
+| `GET /documents/:id` | propriétaire, admin, ou médecin pour les documents qu'il a lui-même déposés | télécharger un document |
 | `DELETE /documents/:id` | propriétaire (documents qu'il a déposés), médecin dépositaire, admin | supprimer un document |
 | `POST /utilisateurs/:id/documents` | **médecin attribué** | déposer un ou plusieurs documents dans la fiche d'un patient (V3) |
 | `POST /commentaires` (`rendezVousId`), `PUT` / `DELETE /commentaires/:id` | **médecin** (auteur du rendez-vous) | commentaire de pathologies lié à un rendez-vous confirmé et commencé (V3) |
 | `GET /rendez-vous/:id` | patient / médecin concernés, admin | détail d'un rendez-vous (V3) |
 | `GET /profil/commentaires` | patient | lire les commentaires de **ses** médecins (V3) |
-| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche ; documents (patient, admin) ou accusés de dépôt (médecin) ; commentaires visibles par le demandeur |
+| `GET /utilisateurs/:id` | soi, médecin attribué, admin | fiche ; documents (patient, admin) ou uniquement les dépôts du médecin (médecin) ; commentaires visibles par le demandeur |
 | `GET /medecin/patients` | médecin | **ses** patients attribués, avec prochain/dernier rendez-vous et nombre de commentaires (V3) |
 | `GET /specialites` (`?toutes=true` : admin) | connecté | liste des spécialités actives |
 | `POST /specialites`, `PUT /specialites/:id` | admin | ajouter, modifier, désactiver / réactiver (`actif`) |

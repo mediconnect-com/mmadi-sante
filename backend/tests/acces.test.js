@@ -242,9 +242,9 @@ describe('Médecin : uniquement les patients attribués', () => {
   it('consulte la fiche du patient attribué (jamais ses documents), mais pas celle d\'un autre patient', async () => {
     const ok = await appel('GET', `/utilisateurs/${jetons.patientA.id}`, { jeton: jetons.medecin.jeton });
     assert.equal(ok.statut, 200);
-    // V3 : un médecin n'a accès à AUCUN document d'un patient (il peut seulement en déposer).
+    // V4 : un médecin n'accède à aucun document du patient (seulement à ceux qu'il a lui-même déposés).
     assert.equal(ok.donnees.documents, undefined, 'aucun document n\'est transmis au médecin');
-    assert.deepEqual(ok.donnees.documentsTransmis, [], 'seulement ses propres dépôts (accusés), ici aucun');
+    assert.deepEqual(ok.donnees.documentsTransmis, [], 'seulement ses propres dépôts, ici aucun');
     assert.equal(ok.donnees.medecins, undefined, 'les attributions sont réservées à l\'admin');
     const doc = await appel('GET', `/documents/${jetons.docPdf}`, { jeton: jetons.medecin.jeton });
     assert.equal(doc.statut, 403, 'le médecin attribué ne peut plus ouvrir un document du patient');

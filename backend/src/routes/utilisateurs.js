@@ -24,8 +24,8 @@ router.get(
       where: { id },
       include: {
         ...INCLURE_SPECIALITES,
-        // V3 : un médecin ne reçoit AUCUN document du patient. Il ne voit que ceux qu'il a lui-même déposés,
-        // sous forme d'accusé (nom, type, date), sans pouvoir les ouvrir.
+        // V4 : un médecin ne reçoit AUCUN document du patient, sauf ceux qu'il a lui-même déposés
+        // (il peut les ouvrir, les télécharger et les retirer, comme le patient).
         documents: {
           where: acteur.role === 'MEDECIN' ? { deposeParMedecinId: acteur.id } : undefined,
           select: selectDocumentSansContenu,
@@ -38,7 +38,7 @@ router.get(
     if (!u) throw new ErreurHttp(404, 'Utilisateur introuvable.');
 
     const reponse = { utilisateur: utilisateurPublic(u) };
-    if (acteur.role === 'MEDECIN') reponse.documentsTransmis = u.documents; // accusés de dépôt uniquement
+    if (acteur.role === 'MEDECIN') reponse.documentsTransmis = u.documents; // uniquement SES dépôts
     else reponse.documents = u.documents;
     // Seul l'administrateur voit les attributions (médecins d'un patient / patients d'un médecin).
     if (acteur.role === 'ADMIN') {

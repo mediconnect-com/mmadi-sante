@@ -27,17 +27,20 @@ async function exigerAccesUtilisateur(acteur, cibleId) {
 }
 
 /**
- * DOCUMENTS (V3) : seuls le PROPRIÉTAIRE (le patient) et l'ADMINISTRATEUR peuvent ouvrir un document.
- * Un médecin n'a accès à AUCUN document d'un patient : ni ceux que le patient a déposés lui-même, ni ceux
- * qu'un médecin (même lui) a déposés dans la fiche. Il peut en déposer, pas en lire.
+ * DOCUMENTS (V4) : le PROPRIÉTAIRE (le patient) et l'ADMINISTRATEUR ouvrent tout document du patient.
+ * Un MÉDECIN ouvre uniquement les documents QU'IL A LUI-MÊME DÉPOSÉS dans une fiche (comme le patient peut le faire,
+ * il peut les voir, les télécharger et les retirer). Il n'accède jamais aux documents que le patient a déposés,
+ * ni à ceux déposés par un confrère.
+ * `doc` : { proprietaireId, deposeParMedecinId }
  */
-function peutConsulterDocument(acteur, proprietaireId) {
-  return acteur.role === 'ADMIN' || acteur.id === proprietaireId;
+function peutConsulterDocument(acteur, doc) {
+  if (acteur.role === 'ADMIN' || acteur.id === doc.proprietaireId) return true;
+  return acteur.role === 'MEDECIN' && Boolean(doc.deposeParMedecinId) && doc.deposeParMedecinId === acteur.id;
 }
 
-function exigerAccesDocument(acteur, proprietaireId) {
-  if (!peutConsulterDocument(acteur, proprietaireId)) {
-    throw new ErreurHttp(403, "Accès refusé : les documents d'un patient ne sont accessibles qu'à lui-même et à l'administrateur.");
+function exigerAccesDocument(acteur, doc) {
+  if (!peutConsulterDocument(acteur, doc)) {
+    throw new ErreurHttp(403, "Accès refusé : vous ne pouvez ouvrir que les documents que vous avez vous-même déposés.");
   }
 }
 

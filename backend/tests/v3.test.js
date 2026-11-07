@@ -154,10 +154,13 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
     assert.equal((await appel('POST', `/utilisateurs/${J.patientV3.id}/documents`, { jeton: J.medecinDemo.jeton, form })).statut, 400);
   });
 
-  it('AUCUN médecin ne peut ouvrir un document du patient : ni celui du patient, ni celui qu\'il a lui-même déposé, ni celui d\'un confrère', async () => {
+  it('V4 : un médecin ouvre SES propres dépôts, mais jamais un document du patient ni d\'un confrère', async () => {
+    // Son propre dépôt : accessible (comme le patient)
+    const ok = await fetch(`${base}/documents/${J.docMedecin.id}`, { headers: { Authorization: `Bearer ${J.medecinDemo.jeton}` } });
+    assert.equal(ok.status, 200, 'le médecin rouvre le document qu\'il a déposé');
+    assert.ok((await ok.arrayBuffer()).byteLength > 0);
     for (const [medecin, doc] of [
       [J.medecinDemo, J.docPatient], // document déposé par le patient
-      [J.medecinDemo, J.docMedecin], // document déposé par ce même médecin
       [J.confrere, J.docPatient],
       [J.confrere, J.docMedecin], // document déposé par un confrère
     ]) {
@@ -166,7 +169,7 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
     }
   });
 
-  it('la fiche du patient ne renvoie aucun document au médecin ; seulement l\'accusé de SES dépôts (nom, type, date)', async () => {
+  it('la fiche du patient ne renvoie au médecin que SES dépôts (jamais ceux du patient ni d\'un confrère)', async () => {
     const r = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.medecinDemo.jeton });
     assert.equal(r.statut, 200);
     assert.equal(r.donnees.documents, undefined);
@@ -174,7 +177,7 @@ describe('V3 — le médecin dépose des documents dans la fiche de SES patients
     assert.equal(r.donnees.documentsTransmis[0].id, J.docMedecin.id);
     assert.equal(r.donnees.documentsTransmis[0].contenu, undefined);
     const confrere = await appel('GET', `/utilisateurs/${J.patientV3.id}`, { jeton: J.confrere.jeton });
-    assert.deepEqual(confrere.donnees.documentsTransmis, [], 'le confrère n\'a rien déposé : aucun accusé, et le document du patient reste invisible');
+    assert.deepEqual(confrere.donnees.documentsTransmis, [], 'le confrère n\'a rien déposé : rien à voir, et le document du patient reste invisible');
     assert.equal(confrere.donnees.documents, undefined);
   });
 

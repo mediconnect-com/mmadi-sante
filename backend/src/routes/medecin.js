@@ -9,7 +9,7 @@ router.use(authentifier, exigerRole('MEDECIN'));
 
 // GET /api/v1/medecin/patients — mes patients, avec de quoi les retrouver et les ouvrir vite (V3) :
 // prochain rendez-vous, dernier rendez-vous passé, nombre de rendez-vous, commentaires que j'ai rédigés.
-// Aucune information sur les documents du patient : un médecin n'y a pas accès.
+// Aucun document du patient ici (un médecin n'ouvre que les documents qu'il a lui-même déposés, via /documents/:id).
 router.get(
   '/patients',
   asyncHandler(async (req, res) => {
